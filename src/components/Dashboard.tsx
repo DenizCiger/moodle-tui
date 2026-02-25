@@ -15,6 +15,7 @@ import { isShortcutPressed, type InputKey } from "./shortcuts.ts";
 import { fitText, truncateText } from "./timetable/text.ts";
 import { useStableInput } from "./useStableInput.ts";
 import { getCachedCourses, saveCoursesToCache } from "../utils/cache.ts";
+import { openUrlInBrowser } from "../utils/browser.ts";
 import { copyTextToClipboard } from "../utils/clipboard.ts";
 import type { MoodleRuntimeConfig } from "../utils/config.ts";
 import {
@@ -23,6 +24,7 @@ import {
   fetchCourseContents,
   fetchCourses,
   fetchUpcomingAssignments,
+  normalizeBaseUrl,
   type MoodleAssignmentDetail,
   type MoodleAssignmentSubmissionStatus,
   type MoodleCourse,
@@ -121,6 +123,28 @@ export function getAssignmentModalLink(
   return value ? value : null;
 }
 
+function findAssignmentModuleUrl(
+  sections: MoodleCourseSection[] | undefined,
+  assignmentId: number,
+): string | undefined {
+  if (!sections) return undefined;
+
+  for (const section of sections) {
+    for (const module of section.modules) {
+      if (!isAssignmentModule(module)) continue;
+      if (module.instance !== assignmentId) continue;
+      if (!module.url) continue;
+      return module.url;
+    }
+  }
+
+  return undefined;
+}
+
+function buildAssignmentActivityUrl(baseUrl: string, cmid: number): string {
+  return `${normalizeBaseUrl(baseUrl)}/mod/assign/view.php?id=${cmid}`;
+}
+
 function buildDefaultCollapsedNodeIds(sections: MoodleCourseSection[]): string[] {
   const collapsedIds: string[] = [];
 
@@ -182,6 +206,7 @@ export default function Dashboard({
   const [courses, setCourses] = useState<MoodleCourse[]>([]);
   const [upcomingAssignments, setUpcomingAssignments] = useState<MoodleUpcomingAssignment[]>([]);
   const [dashboardScrollOffset, setDashboardScrollOffset] = useState(0);
+  const [dashboardSelectedIndex, setDashboardSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dataSource, setDataSource] = useState<"live" | "cache" | "none">("none");
@@ -368,12 +393,6 @@ export default function Dashboard({
     onTabLabelChange("Dashboard");
   }, [activeCourse?.shortname, onTabLabelChange, viewMode]);
 
-  useEffect(() => {
-    if (viewMode === "course") return;
-    closeAssignmentModal();
-    setAssignmentModalContext(null);
-  }, [closeAssignmentModal, viewMode]);
-
   const activeSections: MoodleCourseSection[] =
     activeCourse && courseSectionsById[activeCourse.id]
       ? (courseSectionsById[activeCourse.id] ?? [])
@@ -425,6 +444,7 @@ export default function Dashboard({
   const pageJump = Math.max(4, Math.floor(bodyHeight / 3));
 
   const dashboardRows = Math.max(4, bodyHeight - 2);
+  const maxDashboardRowIndex = Math.max(upcomingAssignments.length - 1, 0);
   const maxDashboardScrollOffset = Math.max(0, upcomingAssignments.length - dashboardRows);
   const visibleAssignments = upcomingAssignments.slice(
     dashboardScrollOffset,
@@ -467,6 +487,30 @@ export default function Dashboard({
     setDashboardScrollOffset((previous) => Math.min(previous, maxDashboardScrollOffset));
   }, [maxDashboardScrollOffset]);
 
+  useEffect(() => {
+    setDashboardSelectedIndex((previous) => Math.min(previous, maxDashboardRowIndex));
+  }, [maxDashboardRowIndex]);
+
+  useEffect(() => {
+    setDashboardScrollOffset((previous) => {
+      const clampedPrevious = Math.min(previous, maxDashboardScrollOffset);
+      if (upcomingAssignments.length === 0) return 0;
+
+      if (dashboardSelectedIndex < clampedPrevious) {
+        return dashboardSelectedIndex;
+      }
+
+      if (dashboardSelectedIndex >= clampedPrevious + dashboardRows) {
+        return Math.min(
+          Math.max(0, dashboardSelectedIndex - dashboardRows + 1),
+          maxDashboardScrollOffset,
+        );
+      }
+
+      return clampedPrevious;
+    });
+  }, [dashboardRows, dashboardSelectedIndex, maxDashboardScrollOffset, upcomingAssignments.length]);
+
   const moveCourseSelection = useCallback(
     (delta: number) => {
       setCourseSelectedIndex((previous) =>
@@ -474,6 +518,15 @@ export default function Dashboard({
       );
     },
     [maxCourseRowIndex],
+  );
+
+  const moveDashboardSelection = useCallback(
+    (delta: number) => {
+      setDashboardSelectedIndex((previous) =>
+        Math.max(0, Math.min(previous + delta, maxDashboardRowIndex)),
+      );
+    },
+    [maxDashboardRowIndex],
   );
 
   const setCourseNodeCollapsed = useCallback((nodeId: string, collapsed: boolean) => {
@@ -636,6 +689,131 @@ export default function Dashboard({
     courseSelectedIndex,
   ]);
 
+  const openSelectedDashboardAssignmentModal = useCallback(async () => {
+    const selectedAssignment = upcomingAssignments[dashboardSelectedIndex];
+    if (!selectedAssignment) return;
+
+    const requestId = assignmentModalRequestIdRef.current + 1;
+    assignmentModalRequestIdRef.current = requestId;
+
+    const cachedAssignmentDetail =
+      assignmentListByCourseId[selectedAssignment.courseId]?.find(
+        (assignment) => assignment.id === selectedAssignment.id,
+      ) ?? null;
+    const cachedDetailUrl = cachedAssignmentDetail
+      ? buildAssignmentActivityUrl(config.baseUrl, cachedAssignmentDetail.cmid)
+      : undefined;
+    const moduleUrl = findAssignmentModuleUrl(
+      courseSectionsById[selectedAssignment.courseId],
+      selectedAssignment.id,
+    ) || cachedDetailUrl;
+
+    setAssignmentModalOpen(true);
+    setAssignmentModalContext({
+      courseId: selectedAssignment.courseId,
+      courseName:
+        selectedAssignment.courseFullName ||
+        selectedAssignment.courseShortName ||
+        `Course ${selectedAssignment.courseId}`,
+      moduleId: selectedAssignment.id,
+      moduleName: selectedAssignment.name,
+      moduleUrl,
+      assignmentId: selectedAssignment.id,
+    });
+    setAssignmentDetailLoading(true);
+    setAssignmentStatusLoading(false);
+    setAssignmentDetailError("");
+    setAssignmentStatusError("");
+
+    let courseAssignments = assignmentListByCourseId[selectedAssignment.courseId];
+    if (!courseAssignments) {
+      try {
+        courseAssignments = await fetchCourseAssignments(config, selectedAssignment.courseId);
+        if (assignmentModalRequestIdRef.current !== requestId) return;
+
+        setAssignmentListByCourseId((previous) => ({
+          ...previous,
+          [selectedAssignment.courseId]: courseAssignments || [],
+        }));
+        setAssignmentDetailByAssignmentId((previous) => {
+          const next = { ...previous };
+          (courseAssignments || []).forEach((detail) => {
+            next[detail.id] = detail;
+          });
+          return next;
+        });
+      } catch (loadError) {
+        if (assignmentModalRequestIdRef.current !== requestId) return;
+        const message = loadError instanceof Error ? loadError.message : "Unknown Moodle API error";
+        setAssignmentDetailError(`Assignment details unavailable: ${message}`);
+        setAssignmentDetailLoading(false);
+      }
+    }
+
+    const resolvedAssignment = (courseAssignments || []).find(
+      (assignment) => assignment.id === selectedAssignment.id,
+    );
+
+    if (assignmentModalRequestIdRef.current !== requestId) return;
+    if (!resolvedAssignment) {
+      setAssignmentDetailError(
+        "Assignment details unavailable for this task. The dashboard entry could not be matched.",
+      );
+      setAssignmentDetailLoading(false);
+    } else {
+      setAssignmentModalContext((previous) =>
+        previous
+          ? {
+              ...previous,
+              moduleName: resolvedAssignment.name,
+              moduleUrl:
+                previous.moduleUrl || buildAssignmentActivityUrl(config.baseUrl, resolvedAssignment.cmid),
+              assignmentId: resolvedAssignment.id,
+            }
+          : previous,
+      );
+      setAssignmentDetailByAssignmentId((previous) => ({
+        ...previous,
+        [resolvedAssignment.id]: resolvedAssignment,
+      }));
+      setAssignmentDetailLoading(false);
+    }
+
+    const assignmentId = selectedAssignment.id;
+    const hasCachedStatus = Object.prototype.hasOwnProperty.call(
+      assignmentStatusByAssignmentId,
+      assignmentId,
+    );
+    if (hasCachedStatus) {
+      setAssignmentStatusLoading(false);
+      return;
+    }
+
+    setAssignmentStatusLoading(true);
+    try {
+      const status = await fetchAssignmentSubmissionStatus(config, assignmentId);
+      if (assignmentModalRequestIdRef.current !== requestId) return;
+      setAssignmentStatusByAssignmentId((previous) => ({
+        ...previous,
+        [assignmentId]: status,
+      }));
+    } catch (loadError) {
+      if (assignmentModalRequestIdRef.current !== requestId) return;
+      const message = loadError instanceof Error ? loadError.message : "Unknown Moodle API error";
+      setAssignmentStatusError(`Submission status unavailable: ${message}`);
+    } finally {
+      if (assignmentModalRequestIdRef.current !== requestId) return;
+      setAssignmentStatusLoading(false);
+    }
+  }, [
+    assignmentListByCourseId,
+    assignmentStatusByAssignmentId,
+    config,
+    courseSectionsById,
+    dashboardSelectedIndex,
+    upcomingAssignments,
+  ]);
+
   const activeAssignmentDetail = useMemo(() => {
     if (!assignmentModalContext?.assignmentId) return null;
     return assignmentDetailByAssignmentId[assignmentModalContext.assignmentId] ?? null;
@@ -646,30 +824,103 @@ export default function Dashboard({
     return assignmentStatusByAssignmentId[assignmentModalContext.assignmentId] ?? null;
   }, [assignmentModalContext?.assignmentId, assignmentStatusByAssignmentId]);
 
-  const attemptCopyCurrentLink = useCallback(() => {
-    const link = assignmentModalOpen
-      ? getAssignmentModalLink(assignmentModalContext)
-      : getSelectedCourseRowLink(courseRows, courseSelectedIndex);
+  const resolveCurrentLinkForAction = useCallback(
+    async (): Promise<{ link: string | null; error?: string }> => {
+      if (assignmentModalOpen) {
+        return { link: getAssignmentModalLink(assignmentModalContext) };
+      }
 
-    if (!link) {
+      if (viewMode === "course") {
+        return { link: getSelectedCourseRowLink(courseRows, courseSelectedIndex) };
+      }
+
+      const selectedAssignment = upcomingAssignments[dashboardSelectedIndex];
+      if (!selectedAssignment) return { link: null };
+
+      const cachedDetail = assignmentListByCourseId[selectedAssignment.courseId]?.find(
+        (assignment) => assignment.id === selectedAssignment.id,
+      );
+      if (cachedDetail) {
+        return { link: buildAssignmentActivityUrl(config.baseUrl, cachedDetail.cmid) };
+      }
+
+      try {
+        const details = await fetchCourseAssignments(config, selectedAssignment.courseId);
+        setAssignmentListByCourseId((previous) => ({
+          ...previous,
+          [selectedAssignment.courseId]: details,
+        }));
+        setAssignmentDetailByAssignmentId((previous) => {
+          const next = { ...previous };
+          details.forEach((detail) => {
+            next[detail.id] = detail;
+          });
+          return next;
+        });
+
+        const resolved = details.find((assignment) => assignment.id === selectedAssignment.id);
+        if (!resolved) return { link: null };
+
+        return { link: buildAssignmentActivityUrl(config.baseUrl, resolved.cmid) };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown Moodle API error";
+        return { link: null, error: message };
+      }
+    },
+    [
+      assignmentListByCourseId,
+      assignmentModalContext,
+      assignmentModalOpen,
+      config,
+      courseRows,
+      courseSelectedIndex,
+      dashboardSelectedIndex,
+      upcomingAssignments,
+      viewMode,
+    ],
+  );
+
+  const attemptCopyCurrentLink = useCallback(async () => {
+    const resolved = await resolveCurrentLinkForAction();
+    if (resolved.error) {
+      showCopyToast("error", truncateText(`Link lookup error: ${resolved.error}`, 72));
+      return;
+    }
+
+    if (!resolved.link) {
       showCopyToast("info", "No link available on this item.");
       return;
     }
 
-    const copyResult = copyTextToClipboard(link);
+    const copyResult = copyTextToClipboard(resolved.link);
     if (copyResult.ok) {
       showCopyToast("success", "Copied link to clipboard.");
       return;
     }
 
     showCopyToast("error", truncateText(`Clipboard error: ${copyResult.message}`, 72));
-  }, [
-    assignmentModalContext,
-    assignmentModalOpen,
-    courseRows,
-    courseSelectedIndex,
-    showCopyToast,
-  ]);
+  }, [resolveCurrentLinkForAction, showCopyToast]);
+
+  const attemptOpenCurrentLink = useCallback(async () => {
+    const resolved = await resolveCurrentLinkForAction();
+    if (resolved.error) {
+      showCopyToast("error", truncateText(`Link lookup error: ${resolved.error}`, 72));
+      return;
+    }
+
+    if (!resolved.link) {
+      showCopyToast("info", "No link available on this item.");
+      return;
+    }
+
+    const openResult = openUrlInBrowser(resolved.link);
+    if (openResult.ok) {
+      showCopyToast("success", "Opened link in browser.");
+      return;
+    }
+
+    showCopyToast("error", truncateText(`Browser error: ${openResult.message}`, 72));
+  }, [resolveCurrentLinkForAction, showCopyToast]);
 
   useStableInput(
     (input, key) => {
@@ -685,8 +936,13 @@ export default function Dashboard({
       }
 
       if (assignmentModalOpen) {
+        if (isShortcutPressed("dashboard-open-link", input, key)) {
+          void attemptOpenCurrentLink();
+          return;
+        }
+
         if (isShortcutPressed("dashboard-copy-link", input, key)) {
-          attemptCopyCurrentLink();
+          void attemptCopyCurrentLink();
         }
         return;
       }
@@ -698,8 +954,13 @@ export default function Dashboard({
       }
 
       if (viewMode === "course") {
+        if (isShortcutPressed("dashboard-open-link", input, key)) {
+          void attemptOpenCurrentLink();
+          return;
+        }
+
         if (isShortcutPressed("dashboard-copy-link", input, key)) {
-          attemptCopyCurrentLink();
+          void attemptCopyCurrentLink();
           return;
         }
 
@@ -799,37 +1060,48 @@ export default function Dashboard({
         return;
       }
 
+      if (isShortcutPressed("dashboard-open-assignment-modal", input, key)) {
+        void openSelectedDashboardAssignmentModal();
+        return;
+      }
+
+      if (isShortcutPressed("dashboard-open-link", input, key)) {
+        void attemptOpenCurrentLink();
+        return;
+      }
+
+      if (isShortcutPressed("dashboard-copy-link", input, key)) {
+        void attemptCopyCurrentLink();
+        return;
+      }
+
       if (isShortcutPressed("dashboard-up", input, key)) {
-        setDashboardScrollOffset((previous) => Math.max(0, previous - 1));
+        moveDashboardSelection(-1);
         return;
       }
 
       if (isShortcutPressed("dashboard-down", input, key)) {
-        setDashboardScrollOffset((previous) =>
-          Math.min(maxDashboardScrollOffset, previous + 1),
-        );
+        moveDashboardSelection(1);
         return;
       }
 
       if (isShortcutPressed("dashboard-page-up", input, key)) {
-        setDashboardScrollOffset((previous) => Math.max(0, previous - pageJump));
+        moveDashboardSelection(-pageJump);
         return;
       }
 
       if (isShortcutPressed("dashboard-page-down", input, key)) {
-        setDashboardScrollOffset((previous) =>
-          Math.min(maxDashboardScrollOffset, previous + pageJump),
-        );
+        moveDashboardSelection(pageJump);
         return;
       }
 
       if (isShortcutPressed("dashboard-home", input, key)) {
-        setDashboardScrollOffset(0);
+        setDashboardSelectedIndex(0);
         return;
       }
 
       if (isShortcutPressed("dashboard-end", input, key)) {
-        setDashboardScrollOffset(maxDashboardScrollOffset);
+        setDashboardSelectedIndex(maxDashboardRowIndex);
       }
     },
     { isActive: Boolean(process.stdin.isTTY) },
@@ -865,7 +1137,7 @@ export default function Dashboard({
           </Box>
 
           <Box minHeight={1}>
-            <Text dimColor>Press / to open course finder.</Text>
+            <Text dimColor>Press Enter to open selected assignment, / for course finder.</Text>
           </Box>
 
           <Box
@@ -915,22 +1187,39 @@ export default function Dashboard({
                 </Box>
 
                 {visibleAssignments.map((assignment, index) => {
-                  const rowBackgroundColor =
-                    index % 2 === 1 ? COLORS.panel.alternate : undefined;
+                  const absoluteIndex = dashboardScrollOffset + index;
+                  const selected = absoluteIndex === dashboardSelectedIndex;
+                  const rowBackgroundColor = selected
+                    ? COLORS.panel.selected
+                    : index % 2 === 1
+                      ? COLORS.panel.alternate
+                      : undefined;
                   const courseLabel =
                     assignment.courseFullName || assignment.courseShortName || "Unknown course";
 
                   return (
                     <Box key={`${assignment.courseId}-${assignment.id}`}>
-                      <Text color={COLORS.neutral.white} backgroundColor={rowBackgroundColor}>
+                      <Text
+                        color={COLORS.neutral.white}
+                        backgroundColor={rowBackgroundColor}
+                        bold={selected}
+                      >
                         {fitText(formatDueDateTime(assignment.dueDate), dueWidth)}
                       </Text>
                       <Text backgroundColor={rowBackgroundColor}> </Text>
-                      <Text color={COLORS.neutral.white} backgroundColor={rowBackgroundColor}>
+                      <Text
+                        color={COLORS.neutral.white}
+                        backgroundColor={rowBackgroundColor}
+                        bold={selected}
+                      >
                         {fitText(courseLabel, courseWidth)}
                       </Text>
                       <Text backgroundColor={rowBackgroundColor}> </Text>
-                      <Text color={COLORS.neutral.white} backgroundColor={rowBackgroundColor}>
+                      <Text
+                        color={COLORS.neutral.white}
+                        backgroundColor={rowBackgroundColor}
+                        bold={selected}
+                      >
                         {fitText(assignment.name, assignmentWidth)}
                       </Text>
                     </Box>

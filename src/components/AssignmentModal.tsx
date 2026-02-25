@@ -84,6 +84,9 @@ function formatBool(value: boolean | undefined): string {
 
 function prettifyStatus(value: string | undefined): string {
   if (!value) return "-";
+  const compact = value.replace(/[\s_-]+/g, "").trim().toLowerCase();
+  if (compact === "notgraded") return "Not graded";
+
   return value
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -179,6 +182,11 @@ function getStatusCellStyle(rowKey: string, value: string): { color?: string; ba
   }
 
   if (rowKey === "grading") {
+    const compact = normalizedValue.replace(/\s+/g, "");
+    if (compact === "notgraded") {
+      return { color: COLORS.neutral.white, backgroundColor: STATUS_NEUTRAL_BG };
+    }
+
     if (normalizedValue.includes("graded")) {
       return { color: COLORS.neutral.white, backgroundColor: STATUS_GOOD_BG };
     }

@@ -43,9 +43,11 @@ bun run bin/moodle.js
 - `r` refresh dashboard or active course page
 - `/` open course finder
 - `f` open course content finder (on course page)
-- `Enter` open selected assignment details modal (on course page)
-- `c` copy selected link to clipboard (course page / assignment modal)
+- `Enter` open selected assignment details modal (dashboard or course page)
+- `c` copy selected link to clipboard (dashboard / course page / assignment modal)
+- `Shift+C` open selected link in browser (dashboard / course page / assignment modal)
 - `↑` / `↓` scroll dashboard or course content
+- `←` / `→` switch targeted content type (inside course content finder, e.g. Assignments only)
 - `PageUp` / `PageDown` jump
 - `Home` / `End` jump to start/end
 - `Enter` open highlighted course (inside course finder)

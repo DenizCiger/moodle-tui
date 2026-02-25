@@ -52,6 +52,7 @@ export interface CourseTreeRow {
   depth: number;
   text: string;
   linkUrl?: string;
+  moduleType?: string;
   icon: string;
   collapsible: boolean;
   expanded: boolean;
@@ -192,6 +193,7 @@ export function buildCourseTreeRows(
         depth: 1,
         text: module.name,
         linkUrl: module.url || undefined,
+        moduleType: modname || undefined,
         icon: resolveModuleIcon(module.modname),
         collapsible: true,
         expanded: !moduleCollapsed,
@@ -207,6 +209,7 @@ export function buildCourseTreeRows(
           kind: "module-description",
           depth: 2,
           text: description,
+          moduleType: modname || undefined,
           icon: "•",
           collapsible: false,
           expanded: false,
@@ -221,6 +224,7 @@ export function buildCourseTreeRows(
           depth: 2,
           text: module.url,
           linkUrl: module.url,
+          moduleType: modname || undefined,
           icon: "🔗",
           collapsible: false,
           expanded: false,
@@ -239,6 +243,7 @@ export function buildCourseTreeRows(
           depth: 2,
           text,
           linkUrl: itemUrl || undefined,
+          moduleType: modname || undefined,
           icon: resolveContentIcon(content.type),
           collapsible: false,
           expanded: false,

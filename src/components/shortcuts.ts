@@ -77,7 +77,7 @@ const SHORTCUTS: ShortcutDefinition[] = [
   {
     id: "dashboard-open-assignment-modal",
     keys: "Enter",
-    action: "Open selected assignment details (course page)",
+    action: "Open selected assignment details",
     match: (_input, key) => key.return,
   },
   {
@@ -85,6 +85,12 @@ const SHORTCUTS: ShortcutDefinition[] = [
     keys: "c",
     action: "Copy selected link to clipboard",
     match: (input) => input === "c",
+  },
+  {
+    id: "dashboard-open-link",
+    keys: "Shift+C",
+    action: "Open selected link in browser",
+    match: (input, key) => input === "C" || (input === "c" && key.shift),
   },
   {
     id: "dashboard-back",
@@ -159,6 +165,18 @@ const SHORTCUTS: ShortcutDefinition[] = [
     match: (_input, key) => key.return,
   },
   {
+    id: "course-content-finder-target-prev",
+    keys: "Left",
+    action: "Target previous content type",
+    match: (_input, key) => key.leftArrow,
+  },
+  {
+    id: "course-content-finder-target-next",
+    keys: "Right",
+    action: "Target next content type",
+    match: (_input, key) => key.rightArrow,
+  },
+  {
     id: "course-content-finder-cancel",
     keys: "Esc",
     action: "Close content finder",
@@ -204,6 +222,7 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
         "dashboard-open-content-finder",
         "dashboard-open-assignment-modal",
         "dashboard-copy-link",
+        "dashboard-open-link",
         "dashboard-back",
         "dashboard-up",
         "dashboard-down",
@@ -221,11 +240,16 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
     },
     {
       title: "Course Content Finder",
-      items: pick(["course-content-finder-submit", "course-content-finder-cancel"]),
+      items: pick([
+        "course-content-finder-submit",
+        "course-content-finder-target-prev",
+        "course-content-finder-target-next",
+        "course-content-finder-cancel",
+      ]),
     },
     {
       title: "Assignment Modal",
-      items: pick(["dashboard-copy-link", "assignment-modal-close"]),
+      items: pick(["dashboard-copy-link", "dashboard-open-link", "assignment-modal-close"]),
     },
   ];
 }

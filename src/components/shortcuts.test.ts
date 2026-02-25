@@ -48,6 +48,7 @@ describe("shortcut registry", () => {
       true,
     );
     expect(isShortcutPressed("dashboard-copy-link", "c", key())).toBe(true);
+    expect(isShortcutPressed("dashboard-open-link", "C", key({ shift: true }))).toBe(true);
     expect(isShortcutPressed("dashboard-back", "", key({ escape: true }))).toBe(true);
   });
 
@@ -57,6 +58,12 @@ describe("shortcut registry", () => {
       true,
     );
     expect(isShortcutPressed("course-content-finder-submit", "", key({ return: true }))).toBe(
+      true,
+    );
+    expect(isShortcutPressed("course-content-finder-target-prev", "", key({ leftArrow: true }))).toBe(
+      true,
+    );
+    expect(isShortcutPressed("course-content-finder-target-next", "", key({ rightArrow: true }))).toBe(
       true,
     );
     expect(isShortcutPressed("course-content-finder-cancel", "", key({ escape: true }))).toBe(
@@ -89,9 +96,13 @@ describe("shortcut registry", () => {
       dashboardSection?.items.some((item) => item.id === "dashboard-open-assignment-modal"),
     ).toBe(true);
     expect(dashboardSection?.items.some((item) => item.id === "dashboard-copy-link")).toBe(true);
+    expect(dashboardSection?.items.some((item) => item.id === "dashboard-open-link")).toBe(true);
 
     const assignmentModalSection = sections.find((section) => section.title === "Assignment Modal");
     expect(assignmentModalSection?.items.some((item) => item.id === "dashboard-copy-link")).toBe(
+      true,
+    );
+    expect(assignmentModalSection?.items.some((item) => item.id === "dashboard-open-link")).toBe(
       true,
     );
   });

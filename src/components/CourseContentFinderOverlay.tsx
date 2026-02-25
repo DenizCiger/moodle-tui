@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import type { CourseTreeRow } from "./CoursePage.tsx";
+import type { CourseTreeNodeKind, CourseTreeRow } from "./CoursePage.tsx";
 import { COLORS } from "./colors.ts";
 import { filterCourseContentByFuzzyQuery } from "./courseContentSearch.ts";
 import TextInput from "./TextInput.tsx";
@@ -14,6 +14,102 @@ interface CourseContentFinderOverlayProps {
   loading: boolean;
   onClose: () => void;
   onApplyRow: (rowId: string) => void;
+}
+
+export interface CourseContentTarget {
+  id: string;
+  label: string;
+  mode: "all" | "module-type" | "row-kind";
+  moduleType?: string;
+  rowKind?: CourseTreeNodeKind;
+}
+
+const MODULE_TYPE_LABELS: Record<string, string> = {
+  assign: "Assignments",
+  quiz: "Quizzes",
+  forum: "Forums",
+  resource: "Resources",
+  page: "Pages",
+  book: "Books",
+  folder: "Folders",
+  url: "Link Activities",
+};
+
+const MODULE_TYPE_ORDER = ["assign", "quiz", "forum", "resource", "page", "book", "folder", "url"];
+
+const KIND_TARGETS: CourseContentTarget[] = [
+  { id: "kind:section", label: "Sections", mode: "row-kind", rowKind: "section" },
+  { id: "kind:label", label: "Labels", mode: "row-kind", rowKind: "label" },
+  { id: "kind:content-item", label: "Files & Items", mode: "row-kind", rowKind: "content-item" },
+  { id: "kind:module-url", label: "URLs", mode: "row-kind", rowKind: "module-url" },
+  { id: "kind:module-description", label: "Descriptions", mode: "row-kind", rowKind: "module-description" },
+  { id: "kind:summary", label: "Summaries", mode: "row-kind", rowKind: "summary" },
+];
+
+function normalizeType(value: string | undefined): string {
+  return (value || "").trim().toLowerCase();
+}
+
+function moduleTypeLabel(moduleType: string): string {
+  const known = MODULE_TYPE_LABELS[moduleType];
+  if (known) return known;
+  if (!moduleType) return "Other Activities";
+
+  const normalized = moduleType.replace(/[_-]+/g, " ").trim();
+  if (!normalized) return "Other Activities";
+  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)} Activities`;
+}
+
+export function buildCourseContentTargets(rows: CourseTreeRow[]): CourseContentTarget[] {
+  const moduleTypes = new Set<string>();
+  rows.forEach((row) => {
+    if (row.kind !== "module") return;
+    const moduleType = normalizeType(row.moduleType);
+    if (!moduleType) return;
+    moduleTypes.add(moduleType);
+  });
+
+  const moduleTypeTargets = Array.from(moduleTypes)
+    .sort((left, right) => {
+      const leftIndex = MODULE_TYPE_ORDER.indexOf(left);
+      const rightIndex = MODULE_TYPE_ORDER.indexOf(right);
+      const leftRank = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+      const rightRank = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+      return left.localeCompare(right, undefined, { sensitivity: "base" });
+    })
+    .map((moduleType) => ({
+      id: `module-type:${moduleType}`,
+      label: moduleTypeLabel(moduleType),
+      mode: "module-type" as const,
+      moduleType,
+    }));
+
+  return [{ id: "all", label: "All", mode: "all" }, ...moduleTypeTargets, ...KIND_TARGETS];
+}
+
+export function filterRowsByTarget(
+  rows: CourseTreeRow[],
+  target: CourseContentTarget,
+): CourseTreeRow[] {
+  if (target.mode === "all") return rows;
+  if (target.mode === "module-type") {
+    const moduleType = normalizeType(target.moduleType);
+    return rows.filter(
+      (row) => row.kind === "module" && normalizeType(row.moduleType) === moduleType,
+    );
+  }
+  return rows.filter((row) => row.kind === target.rowKind);
+}
+
+export function cycleCourseContentTargetIndex(
+  currentIndex: number,
+  delta: number,
+  length: number,
+): number {
+  if (length <= 0) return 0;
+  const normalized = currentIndex + delta;
+  return ((normalized % length) + length) % length;
 }
 
 function renderSearchResultLine(row: CourseTreeRow): string {
@@ -33,10 +129,22 @@ export default function CourseContentFinderOverlay({
   const [draft, setDraft] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [targetIndex, setTargetIndex] = useState(0);
+  const targets = useMemo(() => buildCourseContentTargets(rows), [rows]);
+  const activeTarget = targets[targetIndex] ?? targets[0] ?? { id: "all", label: "All", mode: "all" };
+
+  useEffect(() => {
+    setTargetIndex((previous) => Math.min(previous, Math.max(targets.length - 1, 0)));
+  }, [targets.length]);
+
+  const targetedRows = useMemo(
+    () => filterRowsByTarget(rows, activeTarget),
+    [activeTarget, rows],
+  );
 
   const searchResults = useMemo(
-    () => filterCourseContentByFuzzyQuery(rows, draft),
-    [rows, draft],
+    () => filterCourseContentByFuzzyQuery(targetedRows, draft),
+    [targetedRows, draft],
   );
 
   const modalWidth = Math.max(56, Math.min(112, termWidth - 8));
@@ -80,7 +188,7 @@ export default function CourseContentFinderOverlay({
 
   const applySelection = useCallback(
     (query: string) => {
-      const instantResults = filterCourseContentByFuzzyQuery(rows, query);
+      const instantResults = filterCourseContentByFuzzyQuery(targetedRows, query);
       const boundedIndex = Math.max(
         0,
         Math.min(selectedIdx, Math.max(instantResults.length - 1, 0)),
@@ -93,8 +201,16 @@ export default function CourseContentFinderOverlay({
 
       onApplyRow(selected.id);
     },
-    [onApplyRow, onClose, rows, selectedIdx],
+    [onApplyRow, onClose, selectedIdx, targetedRows],
   );
+
+  const cycleTarget = useCallback((delta: number) => {
+    setTargetIndex((previous) =>
+      cycleCourseContentTargetIndex(previous, delta, targets.length),
+    );
+    setSelectedIdx(0);
+    setScrollOffset(0);
+  }, [targets.length]);
 
   const visibleStart = searchResults.length > 0 ? scrollOffset + 1 : 0;
   const visibleEnd = Math.min(searchResults.length, scrollOffset + visibleResults.length);
@@ -122,7 +238,7 @@ export default function CourseContentFinderOverlay({
           </Text>
           <Text dimColor>
             {searchResults.length > 0
-              ? `${Math.min(selectedIdx + 1, searchResults.length)}/${searchResults.length}`
+              ? `${activeTarget?.label || "All"} · ${Math.min(selectedIdx + 1, searchResults.length)}/${searchResults.length}`
               : "0/0"}
           </Text>
         </Box>
@@ -170,6 +286,16 @@ export default function CourseContentFinderOverlay({
                 return true;
               }
 
+              if (key.leftArrow) {
+                cycleTarget(-1);
+                return true;
+              }
+
+              if (key.rightArrow) {
+                cycleTarget(1);
+                return true;
+              }
+
               if (key.end) {
                 setSelectedIdx(Math.max(searchResults.length - 1, 0));
                 return true;
@@ -188,7 +314,7 @@ export default function CourseContentFinderOverlay({
               <Spinner type="dots" /> Loading course content...
             </Text>
           ) : (
-            <Text dimColor>Use ↑/↓, PgUp/PgDn, Home/End, Enter apply, Esc cancel.</Text>
+            <Text dimColor>Use ←/→ target type, ↑/↓ move, PgUp/PgDn, Home/End, Enter apply, Esc cancel.</Text>
           )}
         </Box>
 
