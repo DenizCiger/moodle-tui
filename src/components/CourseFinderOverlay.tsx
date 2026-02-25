@@ -196,7 +196,6 @@ export default function CourseFinderOverlay({
                   <Text color={selected ? COLORS.brand : COLORS.neutral.gray} bold={selected}>
                     {selected ? "> " : "  "}
                   </Text>
-                  <Text dimColor>{`[${course.shortname || "-"}] `}</Text>
                   <Text>{course.fullname}</Text>
                 </Box>
               );

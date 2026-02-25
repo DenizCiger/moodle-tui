@@ -23,6 +23,7 @@ interface DashboardProps {
   config: MoodleRuntimeConfig;
   topInset?: number;
   inputEnabled?: boolean;
+  onTabLabelChange?: (label: string) => void;
 }
 
 type ViewMode = "dashboard" | "course";
@@ -61,7 +62,12 @@ function enrichAssignmentsWithCourseNames(
   });
 }
 
-export default function Dashboard({ config, topInset = 0, inputEnabled = true }: DashboardProps) {
+export default function Dashboard({
+  config,
+  topInset = 0,
+  inputEnabled = true,
+  onTabLabelChange,
+}: DashboardProps) {
   const { stdout } = useStdout();
   const [courses, setCourses] = useState<MoodleCourse[]>([]);
   const [upcomingAssignments, setUpcomingAssignments] = useState<MoodleUpcomingAssignment[]>([]);
@@ -175,6 +181,17 @@ export default function Dashboard({ config, topInset = 0, inputEnabled = true }:
     if (activeCourseId === null) return null;
     return courses.find((course) => course.id === activeCourseId) ?? null;
   }, [activeCourseId, courses]);
+
+  useEffect(() => {
+    if (!onTabLabelChange) return;
+
+    if (viewMode === "course") {
+      onTabLabelChange(activeCourse?.shortname || "Course");
+      return;
+    }
+
+    onTabLabelChange("Dashboard");
+  }, [activeCourse?.shortname, onTabLabelChange, viewMode]);
 
   const activeSections: MoodleCourseSection[] =
     activeCourse && courseSectionsById[activeCourse.id]

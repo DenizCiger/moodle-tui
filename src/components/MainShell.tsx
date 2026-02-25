@@ -30,6 +30,7 @@ export default function MainShell({ config, onLogout }: MainShellProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [activeTab] = useState<TabId>("dashboard");
+  const [tabLabel, setTabLabel] = useState("Dashboard");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [globalShortcutsBlocked, setGlobalShortcutsBlocked] = useState(false);
 
@@ -63,7 +64,7 @@ export default function MainShell({ config, onLogout }: MainShellProps) {
 
   const termWidth = Math.max(50, stdout?.columns ?? 120);
   const termHeight = Math.max(18, (stdout?.rows ?? 24) - 2);
-  const tabs = useMemo(() => [{ id: "dashboard" as const, label: "Dashboard" }], []);
+  const tabs = useMemo(() => [{ id: "dashboard" as const, label: tabLabel }], [tabLabel]);
 
   return (
     <Box flexDirection="column" width={termWidth} height={termHeight + 2}>
@@ -88,7 +89,12 @@ export default function MainShell({ config, onLogout }: MainShellProps) {
       </Box>
 
       <InputCaptureProvider onBlockedChange={setGlobalShortcutsBlocked}>
-        <Dashboard config={config} topInset={2} inputEnabled={!settingsOpen} />
+        <Dashboard
+          config={config}
+          topInset={2}
+          inputEnabled={!settingsOpen}
+          onTabLabelChange={setTabLabel}
+        />
       </InputCaptureProvider>
 
       {settingsOpen && (
