@@ -81,6 +81,12 @@ const SHORTCUTS: ShortcutDefinition[] = [
     match: (_input, key) => key.return,
   },
   {
+    id: "dashboard-copy-link",
+    keys: "c",
+    action: "Copy selected link to clipboard",
+    match: (input) => input === "c",
+  },
+  {
     id: "dashboard-back",
     keys: "Esc",
     action: "Back to dashboard",
@@ -197,6 +203,7 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
         "dashboard-open-finder",
         "dashboard-open-content-finder",
         "dashboard-open-assignment-modal",
+        "dashboard-copy-link",
         "dashboard-back",
         "dashboard-up",
         "dashboard-down",
@@ -218,7 +225,7 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
     },
     {
       title: "Assignment Modal",
-      items: pick(["assignment-modal-close"]),
+      items: pick(["dashboard-copy-link", "assignment-modal-close"]),
     },
   ];
 }

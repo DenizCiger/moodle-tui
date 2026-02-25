@@ -133,6 +133,7 @@ function wrapText(value: string, width: number): string[] {
 function formatRelativeDue(
   dueDate: number | undefined,
   submissionModified: number | undefined,
+  availableWidth: number,
 ): string {
   if (!dueDate || dueDate <= 0) return "-";
 
@@ -141,9 +142,14 @@ function formatRelativeDue(
     : Math.floor(Date.now() / 1000);
   const secondsDelta = dueDate - reference;
   const absolute = Math.abs(secondsDelta);
-  const hours = Math.floor(absolute / 3600);
+  const days = Math.floor(absolute / 86400);
+  const dayHours = Math.floor((absolute % 86400) / 3600);
   const minutes = Math.floor((absolute % 3600) / 60);
-  const compact = `${hours}h ${minutes}m`;
+  const useDayFormat = days > 0 && availableWidth >= 19;
+  const totalHours = Math.floor(absolute / 3600);
+  const compact = useDayFormat
+    ? `${days}d ${dayHours}h ${minutes}m`
+    : `${totalHours}h ${minutes}m`;
 
   if (secondsDelta >= 0) return `${compact} remaining`;
   return `${compact} late`;
@@ -228,10 +234,23 @@ export default function AssignmentModal({
   }, [status?.canEdit, status?.canSubmit]);
 
   const tableRows = [
-    { key: "attempts", label: "Attempts allowed", value: detail?.maxattempts !== undefined ? String(detail.maxattempts) : "-" },
+    {
+      key: "attempts",
+      label: "Attempts allowed",
+      value:
+        detail?.maxattempts === -1
+          ? "∞"
+          : detail?.maxattempts !== undefined
+            ? String(detail.maxattempts)
+            : "-",
+    },
     { key: "submission", label: "Submission status", value: prettifyStatus(status?.submissionStatus) },
     { key: "grading", label: "Grading status", value: prettifyStatus(status?.gradingStatus) },
-    { key: "time", label: "Time", value: formatRelativeDue(detail?.duedate, status?.lastModified) },
+    {
+      key: "time",
+      label: "Time",
+      value: formatRelativeDue(detail?.duedate, status?.lastModified, tableValueWidth - 1),
+    },
     { key: "modified", label: "Last modified", value: formatDateTime(status?.lastModified) },
     { key: "can-submit", label: "Can submit", value: formatBool(status?.canSubmit) },
     { key: "can-edit", label: "Can edit", value: formatBool(status?.canEdit) },

@@ -15,6 +15,7 @@ import { isShortcutPressed, type InputKey } from "./shortcuts.ts";
 import { fitText, truncateText } from "./timetable/text.ts";
 import { useStableInput } from "./useStableInput.ts";
 import { getCachedCourses, saveCoursesToCache } from "../utils/cache.ts";
+import { copyTextToClipboard } from "../utils/clipboard.ts";
 import type { MoodleRuntimeConfig } from "../utils/config.ts";
 import {
   fetchAssignmentSubmissionStatus,
@@ -45,7 +46,13 @@ interface AssignmentModalContext {
   moduleId: number;
   moduleName: string;
   moduleDescription?: string;
+  moduleUrl?: string;
   assignmentId?: number;
+}
+
+interface CopyToast {
+  tone: "success" | "info" | "error";
+  message: string;
 }
 
 function normalizeModname(value: string | undefined): string {
@@ -96,6 +103,22 @@ export function getAssignmentModalInputAction(
   if (!assignmentModalOpen) return "none";
   if (isShortcutPressed("assignment-modal-close", input, key)) return "close";
   return "none";
+}
+
+export function getSelectedCourseRowLink(
+  courseRows: CourseTreeRow[],
+  selectedIndex: number,
+): string | null {
+  const row = courseRows[selectedIndex];
+  const value = row?.linkUrl?.trim();
+  return value ? value : null;
+}
+
+export function getAssignmentModalLink(
+  context: Pick<AssignmentModalContext, "moduleUrl"> | null | undefined,
+): string | null {
+  const value = context?.moduleUrl?.trim();
+  return value ? value : null;
 }
 
 function buildDefaultCollapsedNodeIds(sections: MoodleCourseSection[]): string[] {
@@ -197,6 +220,8 @@ export default function Dashboard({
     Record<number, MoodleAssignmentSubmissionStatus | null>
   >({});
   const assignmentModalRequestIdRef = useRef(0);
+  const [copyToast, setCopyToast] = useState<CopyToast | null>(null);
+  const copyToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useInputCapture(courseFinderOpen || courseContentFinderOpen || assignmentModalOpen);
 
@@ -207,6 +232,28 @@ export default function Dashboard({
     setAssignmentStatusLoading(false);
     setAssignmentDetailError("");
     setAssignmentStatusError("");
+  }, []);
+
+  const showCopyToast = useCallback((tone: CopyToast["tone"], message: string) => {
+    if (copyToastTimerRef.current) {
+      clearTimeout(copyToastTimerRef.current);
+      copyToastTimerRef.current = null;
+    }
+
+    setCopyToast({ tone, message });
+    copyToastTimerRef.current = setTimeout(() => {
+      setCopyToast(null);
+      copyToastTimerRef.current = null;
+    }, 1600);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (copyToastTimerRef.current) {
+        clearTimeout(copyToastTimerRef.current);
+        copyToastTimerRef.current = null;
+      }
+    };
   }, []);
 
   const loadDashboard = useCallback(
@@ -495,6 +542,7 @@ export default function Dashboard({
       moduleId: module.id,
       moduleName: module.name,
       moduleDescription: module.description,
+      moduleUrl: module.url,
     });
     setAssignmentDetailLoading(true);
     setAssignmentStatusLoading(false);
@@ -598,6 +646,31 @@ export default function Dashboard({
     return assignmentStatusByAssignmentId[assignmentModalContext.assignmentId] ?? null;
   }, [assignmentModalContext?.assignmentId, assignmentStatusByAssignmentId]);
 
+  const attemptCopyCurrentLink = useCallback(() => {
+    const link = assignmentModalOpen
+      ? getAssignmentModalLink(assignmentModalContext)
+      : getSelectedCourseRowLink(courseRows, courseSelectedIndex);
+
+    if (!link) {
+      showCopyToast("info", "No link available on this item.");
+      return;
+    }
+
+    const copyResult = copyTextToClipboard(link);
+    if (copyResult.ok) {
+      showCopyToast("success", "Copied link to clipboard.");
+      return;
+    }
+
+    showCopyToast("error", truncateText(`Clipboard error: ${copyResult.message}`, 72));
+  }, [
+    assignmentModalContext,
+    assignmentModalOpen,
+    courseRows,
+    courseSelectedIndex,
+    showCopyToast,
+  ]);
+
   useStableInput(
     (input, key) => {
       if (!inputEnabled) return;
@@ -611,7 +684,12 @@ export default function Dashboard({
         return;
       }
 
-      if (assignmentModalOpen) return;
+      if (assignmentModalOpen) {
+        if (isShortcutPressed("dashboard-copy-link", input, key)) {
+          attemptCopyCurrentLink();
+        }
+        return;
+      }
       if (courseFinderOpen || courseContentFinderOpen) return;
 
       if (isShortcutPressed("dashboard-open-finder", input, key)) {
@@ -620,6 +698,11 @@ export default function Dashboard({
       }
 
       if (viewMode === "course") {
+        if (isShortcutPressed("dashboard-copy-link", input, key)) {
+          attemptCopyCurrentLink();
+          return;
+        }
+
         if (isShortcutPressed("dashboard-open-content-finder", input, key)) {
           setCourseContentFinderOpen(true);
           return;
@@ -751,6 +834,13 @@ export default function Dashboard({
     },
     { isActive: Boolean(process.stdin.isTTY) },
   );
+
+  const copyToastBorderColor = copyToast?.tone === "success"
+    ? COLORS.success
+    : copyToast?.tone === "error"
+      ? COLORS.error
+      : COLORS.warning;
+  const copyToastTextColor = copyToast?.tone === "error" ? COLORS.error : COLORS.neutral.white;
 
   return (
     <Box flexDirection="column" width={termWidth} height={termHeight}>
@@ -917,6 +1007,29 @@ export default function Dashboard({
             applyCourseContentSelection(rowId);
           }}
         />
+      )}
+
+      {copyToast && (
+        <Box
+          position="absolute"
+          width={termWidth}
+          height={termHeight}
+          justifyContent="flex-end"
+          alignItems="flex-end"
+        >
+          <Box
+            marginRight={1}
+            marginBottom={1}
+            paddingX={1}
+            borderStyle="round"
+            borderColor={copyToastBorderColor}
+            backgroundColor={COLORS.neutral.black}
+          >
+            <Text color={copyToastTextColor}>
+              {truncateText(copyToast.message, Math.max(16, Math.min(58, termWidth - 10)))}
+            </Text>
+          </Box>
+        </Box>
       )}
     </Box>
   );

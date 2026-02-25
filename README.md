@@ -44,6 +44,7 @@ bun run bin/moodle.js
 - `/` open course finder
 - `f` open course content finder (on course page)
 - `Enter` open selected assignment details modal (on course page)
+- `c` copy selected link to clipboard (course page / assignment modal)
 - `↑` / `↓` scroll dashboard or course content
 - `PageUp` / `PageDown` jump
 - `Home` / `End` jump to start/end

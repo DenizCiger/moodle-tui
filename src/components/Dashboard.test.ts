@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 import type { CourseTreeRow } from "./CoursePage.tsx";
 import {
   findCourseModuleForRow,
+  getAssignmentModalLink,
   getAssignmentModalInputAction,
+  getSelectedCourseRowLink,
   isAssignmentModule,
   resolveAssignmentForModule,
 } from "./Dashboard.tsx";
@@ -133,5 +135,40 @@ describe("dashboard assignment helpers", () => {
     expect(getAssignmentModalInputAction(true, "", key({ escape: true }))).toBe("close");
     expect(getAssignmentModalInputAction(false, "", key({ escape: true }))).toBe("none");
     expect(getAssignmentModalInputAction(true, "x", key())).toBe("none");
+  });
+
+  it("resolves selected course row link when available", () => {
+    const rows: CourseTreeRow[] = [
+      {
+        id: "module:10:1",
+        kind: "module",
+        depth: 1,
+        text: "Forum",
+        icon: "💬",
+        collapsible: false,
+        expanded: false,
+      },
+      {
+        id: "module-url:10:1",
+        kind: "module-url",
+        depth: 2,
+        text: "https://example.test/mod/forum/view.php?id=1",
+        linkUrl: "https://example.test/mod/forum/view.php?id=1",
+        icon: "🔗",
+        collapsible: false,
+        expanded: false,
+      },
+    ];
+
+    expect(getSelectedCourseRowLink(rows, 0)).toBeNull();
+    expect(getSelectedCourseRowLink(rows, 1)).toBe("https://example.test/mod/forum/view.php?id=1");
+  });
+
+  it("resolves assignment modal link from context", () => {
+    expect(getAssignmentModalLink({ moduleUrl: "https://example.test/mod/assign/view.php?id=2" })).toBe(
+      "https://example.test/mod/assign/view.php?id=2",
+    );
+    expect(getAssignmentModalLink({ moduleUrl: "   " })).toBeNull();
+    expect(getAssignmentModalLink(null)).toBeNull();
   });
 });

@@ -47,6 +47,7 @@ describe("shortcut registry", () => {
     expect(isShortcutPressed("dashboard-open-assignment-modal", "", key({ return: true }))).toBe(
       true,
     );
+    expect(isShortcutPressed("dashboard-copy-link", "c", key())).toBe(true);
     expect(isShortcutPressed("dashboard-back", "", key({ escape: true }))).toBe(true);
   });
 
@@ -87,5 +88,11 @@ describe("shortcut registry", () => {
     expect(
       dashboardSection?.items.some((item) => item.id === "dashboard-open-assignment-modal"),
     ).toBe(true);
+    expect(dashboardSection?.items.some((item) => item.id === "dashboard-copy-link")).toBe(true);
+
+    const assignmentModalSection = sections.find((section) => section.title === "Assignment Modal");
+    expect(assignmentModalSection?.items.some((item) => item.id === "dashboard-copy-link")).toBe(
+      true,
+    );
   });
 });

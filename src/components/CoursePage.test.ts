@@ -68,6 +68,16 @@ describe("course tree rows", () => {
     expect(rows.some((row) => row.id === "module-description:10:55")).toBe(true);
     expect(rows.some((row) => row.id === "module-url:10:55")).toBe(true);
     expect(rows.some((row) => row.id === "content:10:55:0")).toBe(true);
+
+    expect(rows.find((row) => row.id === "module:10:55")?.linkUrl).toBe(
+      "https://moodle.school.tld/mod/forum/view.php?id=55",
+    );
+    expect(rows.find((row) => row.id === "module-url:10:55")?.linkUrl).toBe(
+      "https://moodle.school.tld/mod/forum/view.php?id=55",
+    );
+    expect(rows.find((row) => row.id === "content:10:55:0")?.linkUrl).toBe(
+      "https://moodle.school.tld/pluginfile.php/guide.pdf",
+    );
   });
 
   it("renders label modules as label leaf rows with plain text", () => {
@@ -129,5 +139,6 @@ describe("course tree rows", () => {
     expect(rows.find((row) => row.id === "module:11:103")?.icon).toBe("📄");
     expect(rows.find((row) => row.id === "module:11:104")?.icon).toBe("📦");
     expect(rows.find((row) => row.id === "label:11:105")?.icon).toBe("🏷");
+    expect(rows.find((row) => row.id === "module:11:101")?.linkUrl).toBeUndefined();
   });
 });
