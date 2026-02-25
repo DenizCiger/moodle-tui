@@ -30,36 +30,32 @@ describe("shortcut registry", () => {
   });
 
   it("matches list navigation keys", () => {
-    expect(isShortcutPressed("courses-up", "", key({ upArrow: true }))).toBe(true);
-    expect(isShortcutPressed("courses-down", "", key({ downArrow: true }))).toBe(true);
+    expect(isShortcutPressed("dashboard-up", "", key({ upArrow: true }))).toBe(true);
+    expect(isShortcutPressed("dashboard-down", "", key({ downArrow: true }))).toBe(true);
   });
 
   it("matches edge navigation shortcuts", () => {
-    expect(isShortcutPressed("courses-home", "", key({ home: true }))).toBe(true);
-    expect(isShortcutPressed("courses-end", "", key({ end: true }))).toBe(true);
+    expect(isShortcutPressed("dashboard-home", "", key({ home: true }))).toBe(true);
+    expect(isShortcutPressed("dashboard-end", "", key({ end: true }))).toBe(true);
   });
 
   it("matches course open and back shortcuts", () => {
-    expect(isShortcutPressed("courses-open", "", key({ return: true }))).toBe(true);
-    expect(isShortcutPressed("course-back", "", key({ escape: true }))).toBe(true);
+    expect(isShortcutPressed("dashboard-open-finder", "/", key())).toBe(true);
+    expect(isShortcutPressed("dashboard-back", "", key({ escape: true }))).toBe(true);
   });
 
-  it("matches search shortcuts", () => {
-    expect(isShortcutPressed("courses-search", "/", key())).toBe(true);
-    expect(isShortcutPressed("courses-search-clear", "c", key())).toBe(true);
-    expect(isShortcutPressed("courses-search-submit", "", key({ return: true }))).toBe(
-      true,
-    );
-    expect(isShortcutPressed("courses-search-cancel", "", key({ escape: true }))).toBe(
+  it("matches course finder shortcuts", () => {
+    expect(isShortcutPressed("course-finder-submit", "", key({ return: true }))).toBe(true);
+    expect(isShortcutPressed("course-finder-cancel", "", key({ escape: true }))).toBe(
       true,
     );
   });
 
   it("returns course-specific sections", () => {
-    const sections = getShortcutSections("courses");
+    const sections = getShortcutSections("dashboard");
     expect(sections.some((section) => section.title === "Global")).toBe(true);
-    expect(sections.some((section) => section.title === "Courses")).toBe(true);
-    expect(sections.some((section) => section.title === "Course Search Input")).toBe(
+    expect(sections.some((section) => section.title === "Dashboard / Course Page")).toBe(true);
+    expect(sections.some((section) => section.title === "Course Finder")).toBe(
       true,
     );
   });

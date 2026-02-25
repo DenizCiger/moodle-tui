@@ -32,7 +32,7 @@ export default function SettingsModal({ activeTab, width, height }: SettingsModa
           <Text bold color={COLORS.brand}>
             Settings
           </Text>
-          <Text dimColor>{`Tab: ${activeTab === "courses" ? "Courses" : "Courses"}`}</Text>
+          <Text dimColor>Tab: Dashboard</Text>
         </Box>
 
         <Text dimColor>{truncateText("Keyboard shortcuts are grouped by context.", modalWidth - 4)}</Text>

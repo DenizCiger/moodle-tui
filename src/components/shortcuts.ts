@@ -1,4 +1,4 @@
-export type TabId = "courses";
+export type TabId = "dashboard";
 
 export interface InputKey {
   upArrow: boolean;
@@ -57,81 +57,69 @@ const SHORTCUTS: ShortcutDefinition[] = [
     match: (input) => input === "l",
   },
   {
-    id: "courses-refresh",
+    id: "dashboard-refresh",
     keys: "r",
-    action: "Refresh course list / active course page",
+    action: "Refresh dashboard or active course page",
     match: (input) => input === "r",
   },
   {
-    id: "courses-open",
-    keys: "Enter",
-    action: "Open selected course page",
-    match: (_input, key) => key.return,
+    id: "dashboard-open-finder",
+    keys: "/",
+    action: "Open course finder",
+    match: (input) => input === "/",
   },
   {
-    id: "course-back",
+    id: "dashboard-back",
     keys: "Esc",
-    action: "Back to course list",
+    action: "Back to dashboard",
     match: (_input, key) => key.escape,
   },
   {
-    id: "courses-up",
+    id: "dashboard-up",
     keys: "Up",
-    action: "Move selection / scroll up",
+    action: "Scroll up",
     match: (_input, key) => key.upArrow,
   },
   {
-    id: "courses-down",
+    id: "dashboard-down",
     keys: "Down",
-    action: "Move selection / scroll down",
+    action: "Scroll down",
     match: (_input, key) => key.downArrow,
   },
   {
-    id: "courses-page-up",
+    id: "dashboard-page-up",
     keys: "PageUp",
     action: "Jump up by one page",
     match: (_input, key) => key.pageUp,
   },
   {
-    id: "courses-page-down",
+    id: "dashboard-page-down",
     keys: "PageDown",
     action: "Jump down by one page",
     match: (_input, key) => key.pageDown,
   },
   {
-    id: "courses-home",
+    id: "dashboard-home",
     keys: "Home",
-    action: "Jump to first course",
+    action: "Jump to top",
     match: (_input, key) => key.home,
   },
   {
-    id: "courses-end",
+    id: "dashboard-end",
     keys: "End",
-    action: "Jump to last course",
+    action: "Jump to bottom",
     match: (_input, key) => key.end,
   },
   {
-    id: "courses-search",
-    keys: "/",
-    action: "Open course search",
-    match: (input) => input === "/",
-  },
-  {
-    id: "courses-search-clear",
-    keys: "c",
-    action: "Clear course search",
-    match: (input) => input === "c",
-  },
-  {
-    id: "courses-search-submit",
+    id: "course-finder-submit",
     keys: "Enter",
-    action: "Close search input",
+    action: "Open highlighted course",
     match: (_input, key) => key.return,
   },
   {
-    id: "courses-search-cancel",
+    id: "course-finder-cancel",
     keys: "Esc",
-    action: "Cancel search edit",
+    action: "Close course finder",
     match: (_input, key) => key.escape,
   },
 ];
@@ -155,33 +143,28 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
   return [
     {
       title: "Global",
-      items: pick(["settings-open", "courses-refresh", "logout", "quit"]),
+      items: pick(["settings-open", "dashboard-refresh", "logout", "quit"]),
     },
     {
       title: "Settings Modal",
       items: pick(["settings-close"]),
     },
     {
-      title: "Courses",
+      title: "Dashboard / Course Page",
       items: pick([
-        "courses-open",
-        "course-back",
-        "courses-up",
-        "courses-down",
-        "courses-page-up",
-        "courses-page-down",
-        "courses-home",
-        "courses-end",
-        "courses-search",
-        "courses-search-clear",
+        "dashboard-open-finder",
+        "dashboard-back",
+        "dashboard-up",
+        "dashboard-down",
+        "dashboard-page-up",
+        "dashboard-page-down",
+        "dashboard-home",
+        "dashboard-end",
       ]),
     },
     {
-      title: "Course Search Input",
-      items: pick([
-        "courses-search-submit",
-        "courses-search-cancel",
-      ]),
+      title: "Course Finder",
+      items: pick(["course-finder-submit", "course-finder-cancel"]),
     },
   ];
 }

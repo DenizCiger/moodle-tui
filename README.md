@@ -6,9 +6,10 @@ A terminal UI for Moodle built with Bun + Ink.
 
 - Secure login with username/password
 - Cross-platform secure password storage (macOS Keychain, Linux libsecret, Windows DPAPI)
-- Courses list view with keyboard navigation
+- Upcoming assignments dashboard (assignment, due date/time, course)
+- Telescope-style course finder (`/`) to open course pages
 - Cached course fallback when Moodle API is unavailable
-- Settings/help modal with shortcut overview (`?`)
+- Settings/help modal with shortcut list (`?`)
 
 ## Requirements
 
@@ -39,14 +40,13 @@ bun run bin/moodle.js
 - `?` open/close settings modal
 - `q` quit
 - `l` logout
-- `r` refresh courses
-- `↑` / `↓` move selection
+- `r` refresh dashboard or active course page
+- `/` open course finder
+- `↑` / `↓` scroll dashboard or course content
 - `PageUp` / `PageDown` jump
 - `Home` / `End` jump to start/end
-- `Enter` open selected course page
-- `Esc` return from course page
-- `/` open live fuzzy search
-- `c` clear search filter
+- `Enter` open highlighted course (inside course finder)
+- `Esc` close course finder or return from course page
 
 ## Tests
 

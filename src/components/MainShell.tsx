@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type { MoodleRuntimeConfig } from "../utils/config.ts";
 import { COLORS } from "./colors.ts";
-import Courses from "./Courses.tsx";
+import Dashboard from "./Dashboard.tsx";
 import { InputCaptureProvider } from "./inputCapture.tsx";
 import SettingsModal from "./SettingsModal.tsx";
 import { isShortcutPressed, type TabId } from "./shortcuts.ts";
@@ -29,7 +29,7 @@ function TabButton({ label, active }: { label: string; active: boolean }) {
 export default function MainShell({ config, onLogout }: MainShellProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const [activeTab] = useState<TabId>("courses");
+  const [activeTab] = useState<TabId>("dashboard");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [globalShortcutsBlocked, setGlobalShortcutsBlocked] = useState(false);
 
@@ -63,7 +63,7 @@ export default function MainShell({ config, onLogout }: MainShellProps) {
 
   const termWidth = Math.max(50, stdout?.columns ?? 120);
   const termHeight = Math.max(18, (stdout?.rows ?? 24) - 2);
-  const tabs = useMemo(() => [{ id: "courses" as const, label: "Courses" }], []);
+  const tabs = useMemo(() => [{ id: "dashboard" as const, label: "Dashboard" }], []);
 
   return (
     <Box flexDirection="column" width={termWidth} height={termHeight + 2}>
@@ -88,7 +88,7 @@ export default function MainShell({ config, onLogout }: MainShellProps) {
       </Box>
 
       <InputCaptureProvider onBlockedChange={setGlobalShortcutsBlocked}>
-        <Courses config={config} topInset={2} inputEnabled={!settingsOpen} />
+        <Dashboard config={config} topInset={2} inputEnabled={!settingsOpen} />
       </InputCaptureProvider>
 
       {settingsOpen && (

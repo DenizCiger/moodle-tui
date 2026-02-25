@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   normalizeCourse,
   normalizeCourseSection,
+  normalizeUpcomingAssignments,
   normalizeTokenResponse,
 } from "./moodle.ts";
 
@@ -79,5 +80,52 @@ describe("moodle response normalization", () => {
     expect(section?.modules.length).toBe(1);
     expect(section?.modules[0]?.id).toBe(55);
     expect(section?.modules[0]?.contents[0]?.filename).toBe("notes.pdf");
+  });
+
+  it("normalizes upcoming assignments and keeps only future due dates", () => {
+    const assignments = normalizeUpcomingAssignments(
+      {
+        courses: [
+          {
+            id: 10,
+            shortname: "PROG",
+            fullname: "Programming",
+            assignments: [
+              { id: 1, name: "Future assignment", duedate: 2_000_000_000 },
+              { id: 2, name: "Past assignment", duedate: 1_000_000_000 },
+              { id: 3, name: "Missing due date" },
+            ],
+          },
+        ],
+      },
+      1_500_000_000,
+    );
+
+    expect(assignments.length).toBe(1);
+    expect(assignments[0]?.id).toBe(1);
+    expect(assignments[0]?.courseId).toBe(10);
+    expect(assignments[0]?.courseShortName).toBe("PROG");
+    expect(assignments[0]?.courseFullName).toBe("Programming");
+  });
+
+  it("sorts upcoming assignments by due date ascending", () => {
+    const assignments = normalizeUpcomingAssignments(
+      {
+        courses: [
+          {
+            id: 1,
+            shortname: "B",
+            fullname: "Beta",
+            assignments: [
+              { id: 2, name: "Second", duedate: 2_000 },
+              { id: 1, name: "First", duedate: 1_000 },
+            ],
+          },
+        ],
+      },
+      500,
+    );
+
+    expect(assignments.map((item) => item.id)).toEqual([1, 2]);
   });
 });

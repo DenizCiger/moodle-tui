@@ -53,6 +53,15 @@ export interface MoodleCourseSection {
   modules: MoodleCourseModule[];
 }
 
+export interface MoodleUpcomingAssignment {
+  id: number;
+  name: string;
+  dueDate: number;
+  courseId: number;
+  courseShortName?: string;
+  courseFullName?: string;
+}
+
 type JsonRecord = Record<string, unknown>;
 
 function asRecord(payload: unknown): JsonRecord | null {
@@ -309,6 +318,73 @@ export function normalizeCourseSection(payload: unknown): MoodleCourseSection | 
   return normalizeCourseSectionRecord(record);
 }
 
+export function normalizeUpcomingAssignments(
+  payload: unknown,
+  nowTimestamp: number,
+): MoodleUpcomingAssignment[] {
+  const record = asRecord(payload);
+  if (!record) return [];
+
+  const courses = Array.isArray(record.courses) ? record.courses : [];
+  const upcoming: MoodleUpcomingAssignment[] = [];
+
+  for (const rawCourse of courses) {
+    const courseRecord = asRecord(rawCourse);
+    if (!courseRecord) continue;
+
+    const courseId = asNumber(courseRecord.id);
+    if (courseId === undefined) continue;
+
+    const courseShortName = asString(courseRecord.shortname);
+    const courseFullName = asString(courseRecord.fullname);
+    const assignments = Array.isArray(courseRecord.assignments) ? courseRecord.assignments : [];
+
+    for (const rawAssignment of assignments) {
+      const assignmentRecord = asRecord(rawAssignment);
+      if (!assignmentRecord) continue;
+
+      const id = asNumber(assignmentRecord.id);
+      const name = asString(assignmentRecord.name);
+      const dueDate = asNumber(assignmentRecord.duedate);
+
+      if (id === undefined || !name || dueDate === undefined || dueDate <= 0) {
+        continue;
+      }
+
+      if (dueDate < nowTimestamp) {
+        continue;
+      }
+
+      upcoming.push({
+        id,
+        name,
+        dueDate,
+        courseId,
+        courseShortName,
+        courseFullName,
+      });
+    }
+  }
+
+  upcoming.sort((left, right) => {
+    if (left.dueDate !== right.dueDate) return left.dueDate - right.dueDate;
+
+    const byCourse = (left.courseFullName || left.courseShortName || "").localeCompare(
+      right.courseFullName || right.courseShortName || "",
+      undefined,
+      { sensitivity: "base" },
+    );
+    if (byCourse !== 0) return byCourse;
+
+    const byName = left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+    if (byName !== 0) return byName;
+
+    return left.id - right.id;
+  });
+
+  return upcoming;
+}
+
 function extractUserId(payload: unknown): number | null {
   const record = asRecord(payload);
   if (!record) return null;
@@ -373,4 +449,20 @@ export async function fetchCourseContents(
     .filter((entry): entry is JsonRecord => Boolean(entry))
     .map((entry) => normalizeCourseSectionRecord(entry))
     .filter((entry): entry is MoodleCourseSection => Boolean(entry));
+}
+
+export async function fetchUpcomingAssignments(
+  config: MoodleRuntimeConfig,
+  nowTimestamp = Math.floor(Date.now() / 1000),
+): Promise<MoodleUpcomingAssignment[]> {
+  const token = await requestToken(config);
+
+  const payload = await callMoodleWebservice(
+    config,
+    token,
+    "mod_assign_get_assignments",
+    {},
+  );
+
+  return normalizeUpcomingAssignments(payload, nowTimestamp);
 }
