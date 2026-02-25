@@ -69,6 +69,12 @@ const SHORTCUTS: ShortcutDefinition[] = [
     match: (input) => input === "/",
   },
   {
+    id: "dashboard-open-content-finder",
+    keys: "f",
+    action: "Open course content finder",
+    match: (input) => input === "f",
+  },
+  {
     id: "dashboard-back",
     keys: "Esc",
     action: "Back to dashboard",
@@ -134,6 +140,18 @@ const SHORTCUTS: ShortcutDefinition[] = [
     action: "Close course finder",
     match: (_input, key) => key.escape,
   },
+  {
+    id: "course-content-finder-submit",
+    keys: "Enter",
+    action: "Jump to highlighted content",
+    match: (_input, key) => key.return,
+  },
+  {
+    id: "course-content-finder-cancel",
+    keys: "Esc",
+    action: "Close content finder",
+    match: (_input, key) => key.escape,
+  },
 ];
 
 const SHORTCUT_BY_ID = new Map(SHORTCUTS.map((shortcut) => [shortcut.id, shortcut]));
@@ -165,6 +183,7 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
       title: "Dashboard / Course Page",
       items: pick([
         "dashboard-open-finder",
+        "dashboard-open-content-finder",
         "dashboard-back",
         "dashboard-up",
         "dashboard-down",
@@ -179,6 +198,10 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
     {
       title: "Course Finder",
       items: pick(["course-finder-submit", "course-finder-cancel"]),
+    },
+    {
+      title: "Course Content Finder",
+      items: pick(["course-content-finder-submit", "course-content-finder-cancel"]),
     },
   ];
 }

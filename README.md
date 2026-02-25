@@ -42,6 +42,7 @@ bun run bin/moodle.js
 - `l` logout
 - `r` refresh dashboard or active course page
 - `/` open course finder
+- `f` open course content finder (on course page)
 - `↑` / `↓` scroll dashboard or course content
 - `PageUp` / `PageDown` jump
 - `Home` / `End` jump to start/end

@@ -1,0 +1,228 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, Text } from "ink";
+import Spinner from "ink-spinner";
+import type { CourseTreeRow } from "./CoursePage.tsx";
+import { COLORS } from "./colors.ts";
+import { filterCourseContentByFuzzyQuery } from "./courseContentSearch.ts";
+import TextInput from "./TextInput.tsx";
+import { truncateText } from "./timetable/text.ts";
+
+interface CourseContentFinderOverlayProps {
+  termWidth: number;
+  termHeight: number;
+  rows: CourseTreeRow[];
+  loading: boolean;
+  onClose: () => void;
+  onApplyRow: (rowId: string) => void;
+}
+
+function renderSearchResultLine(row: CourseTreeRow): string {
+  const indent = "  ".repeat(Math.max(0, row.depth));
+  const indicator = row.collapsible ? "▾" : "•";
+  return `${indent}${indicator} ${row.icon} ${row.text}`;
+}
+
+export default function CourseContentFinderOverlay({
+  termWidth,
+  termHeight,
+  rows,
+  loading,
+  onClose,
+  onApplyRow,
+}: CourseContentFinderOverlayProps) {
+  const [draft, setDraft] = useState("");
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  const searchResults = useMemo(
+    () => filterCourseContentByFuzzyQuery(rows, draft),
+    [rows, draft],
+  );
+
+  const modalWidth = Math.max(56, Math.min(112, termWidth - 8));
+  const modalHeight = Math.max(12, Math.min(30, termHeight - 4));
+  const resultRows = Math.max(3, modalHeight - 7);
+  const maxLineWidth = Math.max(16, modalWidth - 6);
+
+  const visibleResults = useMemo(
+    () => searchResults.slice(scrollOffset, scrollOffset + resultRows),
+    [resultRows, scrollOffset, searchResults],
+  );
+
+  useEffect(() => {
+    setSelectedIdx((previous) => Math.min(previous, Math.max(searchResults.length - 1, 0)));
+  }, [searchResults.length]);
+
+  useEffect(() => {
+    const maxScroll = Math.max(searchResults.length - resultRows, 0);
+    setScrollOffset((previous) => Math.min(previous, maxScroll));
+  }, [resultRows, searchResults.length]);
+
+  useEffect(() => {
+    if (selectedIdx < scrollOffset) {
+      setScrollOffset(selectedIdx);
+      return;
+    }
+
+    if (selectedIdx >= scrollOffset + resultRows) {
+      setScrollOffset(selectedIdx - resultRows + 1);
+    }
+  }, [resultRows, scrollOffset, selectedIdx]);
+
+  const moveSelection = useCallback(
+    (delta: number) => {
+      setSelectedIdx((previous) =>
+        Math.max(0, Math.min(previous + delta, Math.max(searchResults.length - 1, 0))),
+      );
+    },
+    [searchResults.length],
+  );
+
+  const applySelection = useCallback(
+    (query: string) => {
+      const instantResults = filterCourseContentByFuzzyQuery(rows, query);
+      const boundedIndex = Math.max(
+        0,
+        Math.min(selectedIdx, Math.max(instantResults.length - 1, 0)),
+      );
+      const selected = instantResults[boundedIndex];
+      if (!selected) {
+        onClose();
+        return;
+      }
+
+      onApplyRow(selected.id);
+    },
+    [onApplyRow, onClose, rows, selectedIdx],
+  );
+
+  const visibleStart = searchResults.length > 0 ? scrollOffset + 1 : 0;
+  const visibleEnd = Math.min(searchResults.length, scrollOffset + visibleResults.length);
+
+  return (
+    <Box
+      position="absolute"
+      width={termWidth}
+      height={termHeight}
+      justifyContent="center"
+      alignItems="center"
+    >
+      <Box
+        flexDirection="column"
+        width={modalWidth}
+        height={modalHeight}
+        borderStyle="round"
+        borderColor={COLORS.brand}
+        backgroundColor={COLORS.neutral.black}
+        paddingX={1}
+      >
+        <Box justifyContent="space-between">
+          <Text bold color={COLORS.brand}>
+            Course Content Finder
+          </Text>
+          <Text dimColor>
+            {searchResults.length > 0
+              ? `${Math.min(selectedIdx + 1, searchResults.length)}/${searchResults.length}`
+              : "0/0"}
+          </Text>
+        </Box>
+
+        <Box>
+          <Text color={COLORS.brand}>{"> "}</Text>
+          <TextInput
+            value={draft}
+            onChange={(value) => {
+              setDraft(value);
+              setSelectedIdx(0);
+              setScrollOffset(0);
+            }}
+            onSubmit={(value) => {
+              applySelection(value);
+            }}
+            onKey={(_input, key) => {
+              if (key.escape) {
+                onClose();
+                return true;
+              }
+
+              if (key.upArrow) {
+                moveSelection(-1);
+                return true;
+              }
+
+              if (key.downArrow) {
+                moveSelection(1);
+                return true;
+              }
+
+              if (key.pageUp) {
+                moveSelection(-resultRows);
+                return true;
+              }
+
+              if (key.pageDown) {
+                moveSelection(resultRows);
+                return true;
+              }
+
+              if (key.home) {
+                setSelectedIdx(0);
+                return true;
+              }
+
+              if (key.end) {
+                setSelectedIdx(Math.max(searchResults.length - 1, 0));
+                return true;
+              }
+
+              return false;
+            }}
+            placeholder="section, activity, file, url, description"
+            focus
+          />
+        </Box>
+
+        <Box minHeight={1}>
+          {loading ? (
+            <Text color={COLORS.warning}>
+              <Spinner type="dots" /> Loading course content...
+            </Text>
+          ) : (
+            <Text dimColor>Use ↑/↓, PgUp/PgDn, Home/End, Enter apply, Esc cancel.</Text>
+          )}
+        </Box>
+
+        <Box flexDirection="column" flexGrow={1} overflow="hidden">
+          {!loading && searchResults.length === 0 && (
+            <Text dimColor>No course content found for this query.</Text>
+          )}
+
+          {!loading &&
+            visibleResults.map((row, idx) => {
+              const absoluteIdx = scrollOffset + idx;
+              const selected = absoluteIdx === selectedIdx;
+              return (
+                <Box key={row.id}>
+                  <Text color={selected ? COLORS.brand : COLORS.neutral.gray} bold={selected}>
+                    {selected ? "> " : "  "}
+                  </Text>
+                  <Text>{truncateText(renderSearchResultLine(row), maxLineWidth)}</Text>
+                </Box>
+              );
+            })}
+        </Box>
+
+        <Box justifyContent="space-between">
+          <Text dimColor>
+            {searchResults.length > 0 ? `Showing ${visibleStart}-${visibleEnd}` : "Showing 0-0"}
+          </Text>
+          <Text dimColor>
+            {searchResults.length > resultRows
+              ? `Scroll ${scrollOffset}/${Math.max(searchResults.length - resultRows, 0)}`
+              : " "}
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}

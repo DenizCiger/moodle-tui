@@ -43,12 +43,19 @@ describe("shortcut registry", () => {
 
   it("matches course open and back shortcuts", () => {
     expect(isShortcutPressed("dashboard-open-finder", "/", key())).toBe(true);
+    expect(isShortcutPressed("dashboard-open-content-finder", "f", key())).toBe(true);
     expect(isShortcutPressed("dashboard-back", "", key({ escape: true }))).toBe(true);
   });
 
   it("matches course finder shortcuts", () => {
     expect(isShortcutPressed("course-finder-submit", "", key({ return: true }))).toBe(true);
     expect(isShortcutPressed("course-finder-cancel", "", key({ escape: true }))).toBe(
+      true,
+    );
+    expect(isShortcutPressed("course-content-finder-submit", "", key({ return: true }))).toBe(
+      true,
+    );
+    expect(isShortcutPressed("course-content-finder-cancel", "", key({ escape: true }))).toBe(
       true,
     );
   });
@@ -64,7 +71,13 @@ describe("shortcut registry", () => {
     expect(sections.some((section) => section.title === "Course Finder")).toBe(
       true,
     );
+    expect(sections.some((section) => section.title === "Course Content Finder")).toBe(
+      true,
+    );
     expect(dashboardSection?.items.some((item) => item.id === "dashboard-expand")).toBe(true);
     expect(dashboardSection?.items.some((item) => item.id === "dashboard-collapse")).toBe(true);
+    expect(
+      dashboardSection?.items.some((item) => item.id === "dashboard-open-content-finder"),
+    ).toBe(true);
   });
 });

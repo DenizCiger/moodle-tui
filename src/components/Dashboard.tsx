@@ -3,8 +3,10 @@ import { Box, Text, useStdout } from "ink";
 import Spinner from "ink-spinner";
 import { COLORS } from "./colors.ts";
 import CourseFinderOverlay from "./CourseFinderOverlay.tsx";
+import CourseContentFinderOverlay from "./CourseContentFinderOverlay.tsx";
 import CoursePage, {
   buildCourseTreeRows,
+  type CourseTreeRow,
   courseSectionNodeId,
 } from "./CoursePage.tsx";
 import { useInputCapture } from "./inputCapture.tsx";
@@ -98,6 +100,7 @@ export default function Dashboard({
 
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [courseFinderOpen, setCourseFinderOpen] = useState(false);
+  const [courseContentFinderOpen, setCourseContentFinderOpen] = useState(false);
   const [activeCourseId, setActiveCourseId] = useState<number | null>(null);
   const [courseSectionsById, setCourseSectionsById] = useState<Record<number, MoodleCourseSection[]>>(
     {},
@@ -110,8 +113,9 @@ export default function Dashboard({
   const [pendingCourseTreeInitCourseId, setPendingCourseTreeInitCourseId] = useState<number | null>(
     null,
   );
+  const [pendingCourseJumpRowId, setPendingCourseJumpRowId] = useState<string | null>(null);
 
-  useInputCapture(courseFinderOpen);
+  useInputCapture(courseFinderOpen || courseContentFinderOpen);
 
   const loadDashboard = useCallback(
     async ({ forceRefresh }: { forceRefresh: boolean }) => {
@@ -196,8 +200,10 @@ export default function Dashboard({
       setActiveCourseId(course.id);
       setViewMode("course");
       setCourseFinderOpen(false);
+      setCourseContentFinderOpen(false);
       setCourseScrollOffset(0);
       setCourseSelectedIndex(0);
+      setPendingCourseJumpRowId(null);
       setCollapsedCourseNodeIds(buildDefaultCollapsedNodeIds(courseSectionsById[course.id] ?? []));
       setPendingCourseTreeInitCourseId(course.id);
       await loadCourseContents(course.id, false);
@@ -252,6 +258,19 @@ export default function Dashboard({
     () => buildCourseTreeRows(activeSections, collapsedCourseNodeIdSet),
     [activeSections, collapsedCourseNodeIdSet],
   );
+  const allCourseRows = useMemo(
+    () => buildCourseTreeRows(activeSections, []),
+    [activeSections],
+  );
+
+  useEffect(() => {
+    if (!pendingCourseJumpRowId) return;
+    const rowIndex = courseRows.findIndex((row) => row.id === pendingCourseJumpRowId);
+    if (rowIndex === -1) return;
+
+    setCourseSelectedIndex(rowIndex);
+    setPendingCourseJumpRowId(null);
+  }, [courseRows, pendingCourseJumpRowId]);
 
   const termWidth = Math.max(70, stdout?.columns ?? 120);
   const termHeight = Math.max(18, (stdout?.rows ?? 24) - topInset);
@@ -323,10 +342,46 @@ export default function Dashboard({
     });
   }, []);
 
+  const applyCourseContentSelection = useCallback(
+    (targetRowId: string) => {
+      const allRowsById = new Map<string, CourseTreeRow>(
+        allCourseRows.map((row) => [row.id, row]),
+      );
+      const target = allRowsById.get(targetRowId);
+      if (!target) {
+        setCourseContentFinderOpen(false);
+        return;
+      }
+
+      const rowsToExpand: string[] = [];
+      let current: CourseTreeRow | undefined = target;
+
+      while (current?.parentId) {
+        const parent = allRowsById.get(current.parentId);
+        if (!parent) break;
+        if (parent.collapsible) {
+          rowsToExpand.push(parent.id);
+        }
+        current = parent;
+      }
+
+      if (rowsToExpand.length > 0) {
+        const rowsToExpandSet = new Set(rowsToExpand);
+        setCollapsedCourseNodeIds((previous) =>
+          previous.filter((rowId) => !rowsToExpandSet.has(rowId)),
+        );
+      }
+
+      setPendingCourseJumpRowId(targetRowId);
+      setCourseContentFinderOpen(false);
+    },
+    [allCourseRows],
+  );
+
   useStableInput(
     (input, key) => {
       if (!inputEnabled) return;
-      if (courseFinderOpen) return;
+      if (courseFinderOpen || courseContentFinderOpen) return;
 
       if (isShortcutPressed("dashboard-open-finder", input, key)) {
         setCourseFinderOpen(true);
@@ -334,8 +389,14 @@ export default function Dashboard({
       }
 
       if (viewMode === "course") {
+        if (isShortcutPressed("dashboard-open-content-finder", input, key)) {
+          setCourseContentFinderOpen(true);
+          return;
+        }
+
         if (isShortcutPressed("dashboard-back", input, key)) {
           setViewMode("dashboard");
+          setCourseContentFinderOpen(false);
           setCoursePageError("");
           return;
         }
@@ -582,6 +643,21 @@ export default function Dashboard({
           }}
           onApplyCourse={(course) => {
             void openCourseFromFinder(course);
+          }}
+        />
+      )}
+
+      {viewMode === "course" && courseContentFinderOpen && (
+        <CourseContentFinderOverlay
+          termWidth={termWidth}
+          termHeight={termHeight}
+          rows={allCourseRows}
+          loading={coursePageLoading}
+          onClose={() => {
+            setCourseContentFinderOpen(false);
+          }}
+          onApplyRow={(rowId) => {
+            applyCourseContentSelection(rowId);
           }}
         />
       )}
