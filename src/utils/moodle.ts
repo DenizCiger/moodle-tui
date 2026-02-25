@@ -36,6 +36,7 @@ export interface MoodleCourseModuleContentItem {
 
 export interface MoodleCourseModule {
   id: number;
+  instance?: number;
   name: string;
   modname?: string;
   description?: string;
@@ -60,6 +61,34 @@ export interface MoodleUpcomingAssignment {
   courseId: number;
   courseShortName?: string;
   courseFullName?: string;
+}
+
+export interface MoodleAssignmentDetail {
+  id: number;
+  cmid: number;
+  courseId: number;
+  name: string;
+  intro?: string;
+  introFormat?: number;
+  alwaysShowDescription?: boolean;
+  allowsubmissionsfromdate?: number;
+  duedate?: number;
+  cutoffdate?: number;
+  gradingduedate?: number;
+  grade?: number;
+  teamsubmission?: boolean;
+  requireallteammemberssubmit?: boolean;
+  maxattempts?: number;
+  sendnotifications?: boolean;
+}
+
+export interface MoodleAssignmentSubmissionStatus {
+  submissionStatus?: string;
+  gradingStatus?: string;
+  canSubmit?: boolean;
+  canEdit?: boolean;
+  isLocked?: boolean;
+  lastModified?: number;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -112,6 +141,22 @@ function asNumber(value: unknown): number | undefined {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
+  return undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value !== 0;
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+
   return undefined;
 }
 
@@ -314,6 +359,7 @@ function normalizeCourseModuleRecord(record: JsonRecord): MoodleCourseModule | n
 
   return {
     id,
+    instance: asNumber(record.instance),
     name,
     modname: asDecodedString(record.modname),
     description: asDecodedString(record.description),
@@ -349,6 +395,104 @@ export function normalizeCourseSection(payload: unknown): MoodleCourseSection | 
   const record = asRecord(payload);
   if (!record) return null;
   return normalizeCourseSectionRecord(record);
+}
+
+function normalizeAssignmentDetailRecord(
+  record: JsonRecord,
+  fallbackCourseId?: number,
+): MoodleAssignmentDetail | null {
+  const id = asNumber(record.id);
+  const cmid = asNumber(record.cmid);
+  const courseId = asNumber(record.course) ?? fallbackCourseId;
+  const name = asDecodedString(record.name);
+  if (id === undefined || cmid === undefined || courseId === undefined || !name) return null;
+
+  return {
+    id,
+    cmid,
+    courseId,
+    name,
+    intro: asDecodedString(record.intro),
+    introFormat: asNumber(record.introformat),
+    alwaysShowDescription: asBoolean(record.alwaysshowdescription),
+    allowsubmissionsfromdate: asNumber(record.allowsubmissionsfromdate),
+    duedate: asNumber(record.duedate),
+    cutoffdate: asNumber(record.cutoffdate),
+    gradingduedate: asNumber(record.gradingduedate),
+    grade: asNumber(record.grade),
+    teamsubmission: asBoolean(record.teamsubmission),
+    requireallteammemberssubmit: asBoolean(record.requireallteammemberssubmit),
+    maxattempts: asNumber(record.maxattempts),
+    sendnotifications: asBoolean(record.sendnotifications),
+  };
+}
+
+export function normalizeCourseAssignments(
+  payload: unknown,
+  courseIdFilter?: number,
+): MoodleAssignmentDetail[] {
+  const record = asRecord(payload);
+  if (!record) return [];
+
+  const courses = Array.isArray(record.courses) ? record.courses : [];
+  const details: MoodleAssignmentDetail[] = [];
+
+  for (const rawCourse of courses) {
+    const courseRecord = asRecord(rawCourse);
+    if (!courseRecord) continue;
+
+    const courseId = asNumber(courseRecord.id);
+    if (courseId === undefined) continue;
+    if (courseIdFilter !== undefined && courseId !== courseIdFilter) continue;
+
+    const assignments = Array.isArray(courseRecord.assignments) ? courseRecord.assignments : [];
+    for (const rawAssignment of assignments) {
+      const assignmentRecord = asRecord(rawAssignment);
+      if (!assignmentRecord) continue;
+
+      const detail = normalizeAssignmentDetailRecord(assignmentRecord, courseId);
+      if (!detail) continue;
+      details.push(detail);
+    }
+  }
+
+  return details;
+}
+
+export function normalizeAssignmentSubmissionStatus(
+  payload: unknown,
+): MoodleAssignmentSubmissionStatus | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+
+  const lastAttempt = asRecord(record.lastattempt);
+  const submission = lastAttempt ? asRecord(lastAttempt.submission) : null;
+  const submissionStatus = asDecodedString(submission?.status) ?? asDecodedString(record.submissionstatus);
+  const gradingStatus = asDecodedString(lastAttempt?.gradingstatus) ?? asDecodedString(record.gradingstatus);
+  const canSubmit = asBoolean(record.cansubmit);
+  const canEdit = asBoolean(record.caneditowner) ?? asBoolean(record.canedit);
+  const isLocked = asBoolean(lastAttempt?.locked) ?? asBoolean(record.locked);
+  const lastModified = asNumber(submission?.timemodified) ?? asNumber(lastAttempt?.timemodified);
+
+  if (
+    submissionStatus === undefined &&
+    gradingStatus === undefined &&
+    canSubmit === undefined &&
+    canEdit === undefined &&
+    isLocked === undefined &&
+    lastModified === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    submissionStatus,
+    gradingStatus,
+    canSubmit,
+    canEdit,
+    isLocked,
+    lastModified,
+  };
 }
 
 export function normalizeUpcomingAssignments(
@@ -482,6 +626,38 @@ export async function fetchCourseContents(
     .filter((entry): entry is JsonRecord => Boolean(entry))
     .map((entry) => normalizeCourseSectionRecord(entry))
     .filter((entry): entry is MoodleCourseSection => Boolean(entry));
+}
+
+export async function fetchCourseAssignments(
+  config: MoodleRuntimeConfig,
+  courseId: number,
+): Promise<MoodleAssignmentDetail[]> {
+  const token = await requestToken(config);
+
+  const payload = await callMoodleWebservice(
+    config,
+    token,
+    "mod_assign_get_assignments",
+    { "courseids[0]": String(courseId) },
+  );
+
+  return normalizeCourseAssignments(payload, courseId);
+}
+
+export async function fetchAssignmentSubmissionStatus(
+  config: MoodleRuntimeConfig,
+  assignId: number,
+): Promise<MoodleAssignmentSubmissionStatus | null> {
+  const token = await requestToken(config);
+
+  const payload = await callMoodleWebservice(
+    config,
+    token,
+    "mod_assign_get_submission_status",
+    { assignid: String(assignId) },
+  );
+
+  return normalizeAssignmentSubmissionStatus(payload);
 }
 
 export async function fetchUpcomingAssignments(

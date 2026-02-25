@@ -1,25 +1,31 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useStdout } from "ink";
 import Spinner from "ink-spinner";
 import { COLORS } from "./colors.ts";
 import CourseFinderOverlay from "./CourseFinderOverlay.tsx";
 import CourseContentFinderOverlay from "./CourseContentFinderOverlay.tsx";
+import AssignmentModal from "./AssignmentModal.tsx";
 import CoursePage, {
   buildCourseTreeRows,
   type CourseTreeRow,
   courseSectionNodeId,
 } from "./CoursePage.tsx";
 import { useInputCapture } from "./inputCapture.tsx";
-import { isShortcutPressed } from "./shortcuts.ts";
+import { isShortcutPressed, type InputKey } from "./shortcuts.ts";
 import { fitText, truncateText } from "./timetable/text.ts";
 import { useStableInput } from "./useStableInput.ts";
 import { getCachedCourses, saveCoursesToCache } from "../utils/cache.ts";
 import type { MoodleRuntimeConfig } from "../utils/config.ts";
 import {
+  fetchAssignmentSubmissionStatus,
+  fetchCourseAssignments,
   fetchCourseContents,
   fetchCourses,
   fetchUpcomingAssignments,
+  type MoodleAssignmentDetail,
+  type MoodleAssignmentSubmissionStatus,
   type MoodleCourse,
+  type MoodleCourseModule,
   type MoodleCourseSection,
   type MoodleUpcomingAssignment,
 } from "../utils/moodle.ts";
@@ -32,6 +38,65 @@ interface DashboardProps {
 }
 
 type ViewMode = "dashboard" | "course";
+
+interface AssignmentModalContext {
+  courseId: number;
+  courseName: string;
+  moduleId: number;
+  moduleName: string;
+  moduleDescription?: string;
+  assignmentId?: number;
+}
+
+function normalizeModname(value: string | undefined): string {
+  return (value || "").trim().toLowerCase();
+}
+
+export function isAssignmentModule(
+  module: MoodleCourseModule | null | undefined,
+): module is MoodleCourseModule {
+  if (!module) return false;
+  return normalizeModname(module.modname) === "assign";
+}
+
+export function findCourseModuleForRow(
+  sections: MoodleCourseSection[],
+  row: CourseTreeRow | undefined,
+): MoodleCourseModule | null {
+  if (!row || row.kind !== "module") return null;
+  const match = /^module:(\d+):(\d+)$/.exec(row.id);
+  if (!match) return null;
+
+  const sectionId = Number.parseInt(match[1] || "", 10);
+  const moduleId = Number.parseInt(match[2] || "", 10);
+  if (!Number.isFinite(sectionId) || !Number.isFinite(moduleId)) return null;
+
+  const section = sections.find((value) => value.id === sectionId);
+  if (!section) return null;
+  return section.modules.find((module) => module.id === moduleId) ?? null;
+}
+
+export function resolveAssignmentForModule(
+  module: MoodleCourseModule,
+  assignments: MoodleAssignmentDetail[],
+): MoodleAssignmentDetail | null {
+  if (module.instance !== undefined) {
+    const byInstance = assignments.find((assignment) => assignment.id === module.instance);
+    if (byInstance) return byInstance;
+  }
+
+  return assignments.find((assignment) => assignment.cmid === module.id) ?? null;
+}
+
+export function getAssignmentModalInputAction(
+  assignmentModalOpen: boolean,
+  input: string,
+  key: InputKey,
+): "close" | "none" {
+  if (!assignmentModalOpen) return "none";
+  if (isShortcutPressed("assignment-modal-close", input, key)) return "close";
+  return "none";
+}
 
 function buildDefaultCollapsedNodeIds(sections: MoodleCourseSection[]): string[] {
   const collapsedIds: string[] = [];
@@ -114,8 +179,35 @@ export default function Dashboard({
     null,
   );
   const [pendingCourseJumpRowId, setPendingCourseJumpRowId] = useState<string | null>(null);
+  const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
+  const [assignmentModalContext, setAssignmentModalContext] = useState<AssignmentModalContext | null>(
+    null,
+  );
+  const [assignmentDetailLoading, setAssignmentDetailLoading] = useState(false);
+  const [assignmentDetailError, setAssignmentDetailError] = useState("");
+  const [assignmentStatusLoading, setAssignmentStatusLoading] = useState(false);
+  const [assignmentStatusError, setAssignmentStatusError] = useState("");
+  const [assignmentListByCourseId, setAssignmentListByCourseId] = useState<
+    Record<number, MoodleAssignmentDetail[]>
+  >({});
+  const [assignmentDetailByAssignmentId, setAssignmentDetailByAssignmentId] = useState<
+    Record<number, MoodleAssignmentDetail>
+  >({});
+  const [assignmentStatusByAssignmentId, setAssignmentStatusByAssignmentId] = useState<
+    Record<number, MoodleAssignmentSubmissionStatus | null>
+  >({});
+  const assignmentModalRequestIdRef = useRef(0);
 
-  useInputCapture(courseFinderOpen || courseContentFinderOpen);
+  useInputCapture(courseFinderOpen || courseContentFinderOpen || assignmentModalOpen);
+
+  const closeAssignmentModal = useCallback(() => {
+    assignmentModalRequestIdRef.current += 1;
+    setAssignmentModalOpen(false);
+    setAssignmentDetailLoading(false);
+    setAssignmentStatusLoading(false);
+    setAssignmentDetailError("");
+    setAssignmentStatusError("");
+  }, []);
 
   const loadDashboard = useCallback(
     async ({ forceRefresh }: { forceRefresh: boolean }) => {
@@ -204,11 +296,13 @@ export default function Dashboard({
       setCourseScrollOffset(0);
       setCourseSelectedIndex(0);
       setPendingCourseJumpRowId(null);
+      closeAssignmentModal();
+      setAssignmentModalContext(null);
       setCollapsedCourseNodeIds(buildDefaultCollapsedNodeIds(courseSectionsById[course.id] ?? []));
       setPendingCourseTreeInitCourseId(course.id);
       await loadCourseContents(course.id, false);
     },
-    [courseSectionsById, loadCourseContents],
+    [closeAssignmentModal, courseSectionsById, loadCourseContents],
   );
 
   const activeCourse = useMemo(() => {
@@ -226,6 +320,12 @@ export default function Dashboard({
 
     onTabLabelChange("Dashboard");
   }, [activeCourse?.shortname, onTabLabelChange, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === "course") return;
+    closeAssignmentModal();
+    setAssignmentModalContext(null);
+  }, [closeAssignmentModal, viewMode]);
 
   const activeSections: MoodleCourseSection[] =
     activeCourse && courseSectionsById[activeCourse.id]
@@ -378,9 +478,140 @@ export default function Dashboard({
     [allCourseRows],
   );
 
+  const openSelectedAssignmentModal = useCallback(async () => {
+    if (activeCourseId === null || !activeCourse) return;
+
+    const selectedRow = courseRows[courseSelectedIndex];
+    const module = findCourseModuleForRow(activeSections, selectedRow);
+    if (!isAssignmentModule(module)) return;
+
+    const requestId = assignmentModalRequestIdRef.current + 1;
+    assignmentModalRequestIdRef.current = requestId;
+
+    setAssignmentModalOpen(true);
+    setAssignmentModalContext({
+      courseId: activeCourse.id,
+      courseName: activeCourse.fullname,
+      moduleId: module.id,
+      moduleName: module.name,
+      moduleDescription: module.description,
+    });
+    setAssignmentDetailLoading(true);
+    setAssignmentStatusLoading(false);
+    setAssignmentDetailError("");
+    setAssignmentStatusError("");
+
+    let courseAssignments = assignmentListByCourseId[activeCourse.id];
+    if (!courseAssignments) {
+      try {
+        courseAssignments = await fetchCourseAssignments(config, activeCourse.id);
+        if (assignmentModalRequestIdRef.current !== requestId) return;
+
+        setAssignmentListByCourseId((previous) => ({
+          ...previous,
+          [activeCourse.id]: courseAssignments || [],
+        }));
+        setAssignmentDetailByAssignmentId((previous) => {
+          const next = { ...previous };
+          (courseAssignments || []).forEach((detail) => {
+            next[detail.id] = detail;
+          });
+          return next;
+        });
+      } catch (loadError) {
+        if (assignmentModalRequestIdRef.current !== requestId) return;
+        const message = loadError instanceof Error ? loadError.message : "Unknown Moodle API error";
+        setAssignmentDetailError(`Assignment details unavailable: ${message}`);
+        setAssignmentDetailLoading(false);
+        return;
+      }
+    }
+
+    const resolvedAssignment = resolveAssignmentForModule(module, courseAssignments || []);
+    if (!resolvedAssignment) {
+      if (assignmentModalRequestIdRef.current !== requestId) return;
+      setAssignmentDetailError(
+        "Assignment details unavailable for this activity. This Moodle module could not be matched.",
+      );
+      setAssignmentDetailLoading(false);
+      return;
+    }
+
+    if (assignmentModalRequestIdRef.current !== requestId) return;
+    setAssignmentModalContext((previous) =>
+      previous
+        ? {
+            ...previous,
+            assignmentId: resolvedAssignment.id,
+          }
+        : previous,
+    );
+    setAssignmentDetailByAssignmentId((previous) => ({
+      ...previous,
+      [resolvedAssignment.id]: resolvedAssignment,
+    }));
+    setAssignmentDetailLoading(false);
+
+    const hasCachedStatus = Object.prototype.hasOwnProperty.call(
+      assignmentStatusByAssignmentId,
+      resolvedAssignment.id,
+    );
+    if (hasCachedStatus) {
+      setAssignmentStatusLoading(false);
+      return;
+    }
+
+    setAssignmentStatusLoading(true);
+    try {
+      const status = await fetchAssignmentSubmissionStatus(config, resolvedAssignment.id);
+      if (assignmentModalRequestIdRef.current !== requestId) return;
+      setAssignmentStatusByAssignmentId((previous) => ({
+        ...previous,
+        [resolvedAssignment.id]: status,
+      }));
+    } catch (loadError) {
+      if (assignmentModalRequestIdRef.current !== requestId) return;
+      const message = loadError instanceof Error ? loadError.message : "Unknown Moodle API error";
+      setAssignmentStatusError(`Submission status unavailable: ${message}`);
+    } finally {
+      if (assignmentModalRequestIdRef.current !== requestId) return;
+      setAssignmentStatusLoading(false);
+    }
+  }, [
+    activeCourse,
+    activeCourseId,
+    activeSections,
+    assignmentListByCourseId,
+    assignmentStatusByAssignmentId,
+    config,
+    courseRows,
+    courseSelectedIndex,
+  ]);
+
+  const activeAssignmentDetail = useMemo(() => {
+    if (!assignmentModalContext?.assignmentId) return null;
+    return assignmentDetailByAssignmentId[assignmentModalContext.assignmentId] ?? null;
+  }, [assignmentDetailByAssignmentId, assignmentModalContext?.assignmentId]);
+
+  const activeAssignmentStatus = useMemo(() => {
+    if (!assignmentModalContext?.assignmentId) return null;
+    return assignmentStatusByAssignmentId[assignmentModalContext.assignmentId] ?? null;
+  }, [assignmentModalContext?.assignmentId, assignmentStatusByAssignmentId]);
+
   useStableInput(
     (input, key) => {
       if (!inputEnabled) return;
+      const assignmentModalAction = getAssignmentModalInputAction(
+        assignmentModalOpen,
+        input,
+        key as InputKey,
+      );
+      if (assignmentModalAction === "close") {
+        closeAssignmentModal();
+        return;
+      }
+
+      if (assignmentModalOpen) return;
       if (courseFinderOpen || courseContentFinderOpen) return;
 
       if (isShortcutPressed("dashboard-open-finder", input, key)) {
@@ -394,10 +625,17 @@ export default function Dashboard({
           return;
         }
 
+        if (isShortcutPressed("dashboard-open-assignment-modal", input, key)) {
+          void openSelectedAssignmentModal();
+          return;
+        }
+
         if (isShortcutPressed("dashboard-back", input, key)) {
           setViewMode("dashboard");
           setCourseContentFinderOpen(false);
           setCoursePageError("");
+          closeAssignmentModal();
+          setAssignmentModalContext(null);
           return;
         }
 
@@ -630,6 +868,25 @@ export default function Dashboard({
         <Box marginTop={1}>
           <Text color={COLORS.error}>{truncateText(error, Math.max(16, termWidth - 2))}</Text>
         </Box>
+      )}
+
+      {assignmentModalOpen && assignmentModalContext && (
+        <AssignmentModal
+          termWidth={termWidth}
+          termHeight={termHeight}
+          context={{
+            courseName: assignmentModalContext.courseName,
+            moduleName: assignmentModalContext.moduleName,
+            moduleDescription: assignmentModalContext.moduleDescription,
+          }}
+          loading={assignmentDetailLoading}
+          detailError={assignmentDetailError}
+          statusError={assignmentStatusError}
+          detail={activeAssignmentDetail}
+          statusLoading={assignmentStatusLoading}
+          status={activeAssignmentStatus}
+          onClose={closeAssignmentModal}
+        />
       )}
 
       {courseFinderOpen && (

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
+  normalizeAssignmentSubmissionStatus,
   normalizeCourse,
+  normalizeCourseAssignments,
   normalizeCourseSection,
   normalizeUpcomingAssignments,
   normalizeTokenResponse,
@@ -129,5 +131,79 @@ describe("moodle response normalization", () => {
     );
 
     expect(assignments.map((item) => item.id)).toEqual([1, 2]);
+  });
+
+  it("normalizes assignment details for a specific course", () => {
+    const details = normalizeCourseAssignments(
+      {
+        courses: [
+          {
+            id: 10,
+            assignments: [
+              {
+                id: 7,
+                cmid: 77,
+                course: 10,
+                name: "Essay &amp; Draft",
+                intro: "<p>Submit a draft.</p>",
+                introformat: 1,
+                alwaysshowdescription: 1,
+                allowsubmissionsfromdate: 1_700_000_000,
+                duedate: 1_700_010_000,
+                cutoffdate: 1_700_020_000,
+                gradingduedate: 1_700_030_000,
+                grade: 100,
+                teamsubmission: 0,
+                requireallteammemberssubmit: false,
+                maxattempts: -1,
+                sendnotifications: true,
+              },
+            ],
+          },
+          {
+            id: 11,
+            assignments: [{ id: 8, cmid: 88, course: 11, name: "Other course assignment" }],
+          },
+        ],
+      },
+      10,
+    );
+
+    expect(details.length).toBe(1);
+    expect(details[0]?.id).toBe(7);
+    expect(details[0]?.cmid).toBe(77);
+    expect(details[0]?.courseId).toBe(10);
+    expect(details[0]?.name).toBe("Essay & Draft");
+    expect(details[0]?.alwaysShowDescription).toBe(true);
+    expect(details[0]?.teamsubmission).toBe(false);
+    expect(details[0]?.sendnotifications).toBe(true);
+  });
+
+  it("normalizes assignment submission status payload", () => {
+    const status = normalizeAssignmentSubmissionStatus({
+      cansubmit: 1,
+      caneditowner: 0,
+      lastattempt: {
+        gradingstatus: "graded",
+        locked: true,
+        submission: {
+          status: "submitted",
+          timemodified: 1_700_000_111,
+        },
+      },
+    });
+
+    expect(status).not.toBeNull();
+    expect(status?.submissionStatus).toBe("submitted");
+    expect(status?.gradingStatus).toBe("graded");
+    expect(status?.canSubmit).toBe(true);
+    expect(status?.canEdit).toBe(false);
+    expect(status?.isLocked).toBe(true);
+    expect(status?.lastModified).toBe(1_700_000_111);
+  });
+
+  it("returns null submission status when payload has no meaningful values", () => {
+    const status = normalizeAssignmentSubmissionStatus({ warnings: [] });
+    expect(status).toBeNull();
   });
 });

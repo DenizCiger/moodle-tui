@@ -75,6 +75,12 @@ const SHORTCUTS: ShortcutDefinition[] = [
     match: (input) => input === "f",
   },
   {
+    id: "dashboard-open-assignment-modal",
+    keys: "Enter",
+    action: "Open selected assignment details (course page)",
+    match: (_input, key) => key.return,
+  },
+  {
     id: "dashboard-back",
     keys: "Esc",
     action: "Back to dashboard",
@@ -152,6 +158,12 @@ const SHORTCUTS: ShortcutDefinition[] = [
     action: "Close content finder",
     match: (_input, key) => key.escape,
   },
+  {
+    id: "assignment-modal-close",
+    keys: "Esc",
+    action: "Close assignment details modal",
+    match: (_input, key) => key.escape,
+  },
 ];
 
 const SHORTCUT_BY_ID = new Map(SHORTCUTS.map((shortcut) => [shortcut.id, shortcut]));
@@ -184,6 +196,7 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
       items: pick([
         "dashboard-open-finder",
         "dashboard-open-content-finder",
+        "dashboard-open-assignment-modal",
         "dashboard-back",
         "dashboard-up",
         "dashboard-down",
@@ -202,6 +215,10 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
     {
       title: "Course Content Finder",
       items: pick(["course-content-finder-submit", "course-content-finder-cancel"]),
+    },
+    {
+      title: "Assignment Modal",
+      items: pick(["assignment-modal-close"]),
     },
   ];
 }

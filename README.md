@@ -43,11 +43,12 @@ bun run bin/moodle.js
 - `r` refresh dashboard or active course page
 - `/` open course finder
 - `f` open course content finder (on course page)
+- `Enter` open selected assignment details modal (on course page)
 - `↑` / `↓` scroll dashboard or course content
 - `PageUp` / `PageDown` jump
 - `Home` / `End` jump to start/end
 - `Enter` open highlighted course (inside course finder)
-- `Esc` close course finder or return from course page
+- `Esc` close active modal/finder or return from course page
 
 ## Tests
 
