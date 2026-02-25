@@ -87,6 +87,18 @@ const SHORTCUTS: ShortcutDefinition[] = [
     match: (_input, key) => key.downArrow,
   },
   {
+    id: "dashboard-expand",
+    keys: "Right",
+    action: "Expand selected node or move to first child",
+    match: (_input, key) => key.rightArrow,
+  },
+  {
+    id: "dashboard-collapse",
+    keys: "Left",
+    action: "Collapse selected node or move to parent",
+    match: (_input, key) => key.leftArrow,
+  },
+  {
     id: "dashboard-page-up",
     keys: "PageUp",
     action: "Jump up by one page",
@@ -156,6 +168,8 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
         "dashboard-back",
         "dashboard-up",
         "dashboard-down",
+        "dashboard-expand",
+        "dashboard-collapse",
         "dashboard-page-up",
         "dashboard-page-down",
         "dashboard-home",

@@ -32,6 +32,8 @@ describe("shortcut registry", () => {
   it("matches list navigation keys", () => {
     expect(isShortcutPressed("dashboard-up", "", key({ upArrow: true }))).toBe(true);
     expect(isShortcutPressed("dashboard-down", "", key({ downArrow: true }))).toBe(true);
+    expect(isShortcutPressed("dashboard-expand", "", key({ rightArrow: true }))).toBe(true);
+    expect(isShortcutPressed("dashboard-collapse", "", key({ leftArrow: true }))).toBe(true);
   });
 
   it("matches edge navigation shortcuts", () => {
@@ -53,10 +55,16 @@ describe("shortcut registry", () => {
 
   it("returns course-specific sections", () => {
     const sections = getShortcutSections("dashboard");
+    const dashboardSection = sections.find(
+      (section) => section.title === "Dashboard / Course Page",
+    );
+
     expect(sections.some((section) => section.title === "Global")).toBe(true);
     expect(sections.some((section) => section.title === "Dashboard / Course Page")).toBe(true);
     expect(sections.some((section) => section.title === "Course Finder")).toBe(
       true,
     );
+    expect(dashboardSection?.items.some((item) => item.id === "dashboard-expand")).toBe(true);
+    expect(dashboardSection?.items.some((item) => item.id === "dashboard-collapse")).toBe(true);
   });
 });

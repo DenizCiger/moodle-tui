@@ -33,8 +33,8 @@ describe("moodle response normalization", () => {
       fullname: "Mathematics",
       displayname: "Mathematics 2025",
       categoryid: 5,
-      categoryname: "STEM",
-      summary: "<p>Summary</p>",
+      categoryname: "Science &amp; Tech",
+      summary: "<p>Summary &amp; Scope</p>",
       visible: 1,
       progress: 75.4,
       courseurl: "https://moodle.school.tld/course/view.php?id=42",
@@ -44,7 +44,8 @@ describe("moodle response normalization", () => {
     expect(course?.id).toBe(42);
     expect(course?.shortname).toBe("MATH");
     expect(course?.categoryid).toBe(5);
-    expect(course?.categoryname).toBe("STEM");
+    expect(course?.categoryname).toBe("Science & Tech");
+    expect(course?.summary).toBe("<p>Summary & Scope</p>");
     expect(course?.visible).toBe(1);
     expect(course?.progress).toBe(75.4);
   });
@@ -89,9 +90,9 @@ describe("moodle response normalization", () => {
           {
             id: 10,
             shortname: "PROG",
-            fullname: "Programming",
+            fullname: "Programming &amp; Basics",
             assignments: [
-              { id: 1, name: "Future assignment", duedate: 2_000_000_000 },
+              { id: 1, name: "Future &amp; assignment", duedate: 2_000_000_000 },
               { id: 2, name: "Past assignment", duedate: 1_000_000_000 },
               { id: 3, name: "Missing due date" },
             ],
@@ -103,9 +104,10 @@ describe("moodle response normalization", () => {
 
     expect(assignments.length).toBe(1);
     expect(assignments[0]?.id).toBe(1);
+    expect(assignments[0]?.name).toBe("Future & assignment");
     expect(assignments[0]?.courseId).toBe(10);
     expect(assignments[0]?.courseShortName).toBe("PROG");
-    expect(assignments[0]?.courseFullName).toBe("Programming");
+    expect(assignments[0]?.courseFullName).toBe("Programming & Basics");
   });
 
   it("sorts upcoming assignments by due date ascending", () => {

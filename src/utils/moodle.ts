@@ -64,6 +64,33 @@ export interface MoodleUpcomingAssignment {
 
 type JsonRecord = Record<string, unknown>;
 
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: "\"",
+  apos: "'",
+  nbsp: " ",
+};
+
+function decodeHtmlEntities(value: string): string {
+  return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (full, entity: string) => {
+    if (entity.startsWith("#x") || entity.startsWith("#X")) {
+      const codePoint = Number.parseInt(entity.slice(2), 16);
+      if (!Number.isFinite(codePoint) || codePoint <= 0) return full;
+      return String.fromCodePoint(codePoint);
+    }
+
+    if (entity.startsWith("#")) {
+      const codePoint = Number.parseInt(entity.slice(1), 10);
+      if (!Number.isFinite(codePoint) || codePoint <= 0) return full;
+      return String.fromCodePoint(codePoint);
+    }
+
+    return NAMED_HTML_ENTITIES[entity.toLowerCase()] ?? full;
+  });
+}
+
 function asRecord(payload: unknown): JsonRecord | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   return payload as JsonRecord;
@@ -71,6 +98,12 @@ function asRecord(payload: unknown): JsonRecord | null {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function asDecodedString(value: unknown): string | undefined {
+  const raw = asString(value);
+  if (raw === undefined) return undefined;
+  return decodeHtmlEntities(raw);
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -232,12 +265,12 @@ function normalizeCourseRecord(record: JsonRecord): MoodleCourse | null {
 
   return {
     id,
-    shortname,
-    fullname,
-    displayname: asString(record.displayname),
+    shortname: decodeHtmlEntities(shortname),
+    fullname: decodeHtmlEntities(fullname),
+    displayname: asDecodedString(record.displayname),
     categoryid: asNumber(record.categoryid),
-    categoryname: asString(record.categoryname),
-    summary: asString(record.summary),
+    categoryname: asDecodedString(record.categoryname),
+    summary: asDecodedString(record.summary),
     visible: toVisibleNumber(record.visible),
     progress: toProgress(record.progress),
     courseurl: asString(record.courseurl) ?? asString(record.viewurl),
@@ -257,12 +290,12 @@ function normalizeCourseModuleContentItem(
   if (!record) return null;
 
   return {
-    type: asString(record.type),
-    filename: asString(record.filename),
+    type: asDecodedString(record.type),
+    filename: asDecodedString(record.filename),
     filepath: asString(record.filepath),
     filesize: asNumber(record.filesize),
     fileurl: asString(record.fileurl),
-    mimetype: asString(record.mimetype),
+    mimetype: asDecodedString(record.mimetype),
     timemodified: asNumber(record.timemodified),
     url: asString(record.url),
   };
@@ -270,7 +303,7 @@ function normalizeCourseModuleContentItem(
 
 function normalizeCourseModuleRecord(record: JsonRecord): MoodleCourseModule | null {
   const id = asNumber(record.id);
-  const name = asString(record.name);
+  const name = asDecodedString(record.name);
   if (id === undefined || !name) return null;
 
   const contents = Array.isArray(record.contents)
@@ -282,8 +315,8 @@ function normalizeCourseModuleRecord(record: JsonRecord): MoodleCourseModule | n
   return {
     id,
     name,
-    modname: asString(record.modname),
-    description: asString(record.description),
+    modname: asDecodedString(record.modname),
+    description: asDecodedString(record.description),
     url: asString(record.url),
     visible: toVisibleNumber(record.visible),
     contents,
@@ -304,9 +337,9 @@ function normalizeCourseSectionRecord(record: JsonRecord): MoodleCourseSection |
 
   return {
     id,
-    name: asString(record.name),
+    name: asDecodedString(record.name),
     section: asNumber(record.section),
-    summary: asString(record.summary),
+    summary: asDecodedString(record.summary),
     visible: toVisibleNumber(record.visible),
     modules,
   };
@@ -335,8 +368,8 @@ export function normalizeUpcomingAssignments(
     const courseId = asNumber(courseRecord.id);
     if (courseId === undefined) continue;
 
-    const courseShortName = asString(courseRecord.shortname);
-    const courseFullName = asString(courseRecord.fullname);
+    const courseShortName = asDecodedString(courseRecord.shortname);
+    const courseFullName = asDecodedString(courseRecord.fullname);
     const assignments = Array.isArray(courseRecord.assignments) ? courseRecord.assignments : [];
 
     for (const rawAssignment of assignments) {
@@ -344,7 +377,7 @@ export function normalizeUpcomingAssignments(
       if (!assignmentRecord) continue;
 
       const id = asNumber(assignmentRecord.id);
-      const name = asString(assignmentRecord.name);
+      const name = asDecodedString(assignmentRecord.name);
       const dueDate = asNumber(assignmentRecord.duedate);
 
       if (id === undefined || !name || dueDate === undefined || dueDate <= 0) {

@@ -3,7 +3,10 @@ import { Box, Text, useStdout } from "ink";
 import Spinner from "ink-spinner";
 import { COLORS } from "./colors.ts";
 import CourseFinderOverlay from "./CourseFinderOverlay.tsx";
-import CoursePage, { buildCourseContentLines } from "./CoursePage.tsx";
+import CoursePage, {
+  buildCourseTreeRows,
+  courseSectionNodeId,
+} from "./CoursePage.tsx";
 import { useInputCapture } from "./inputCapture.tsx";
 import { isShortcutPressed } from "./shortcuts.ts";
 import { fitText, truncateText } from "./timetable/text.ts";
@@ -27,6 +30,23 @@ interface DashboardProps {
 }
 
 type ViewMode = "dashboard" | "course";
+
+function buildDefaultCollapsedNodeIds(sections: MoodleCourseSection[]): string[] {
+  const collapsedIds: string[] = [];
+
+  sections.forEach((section) => {
+    const sectionId = courseSectionNodeId(section.id);
+    collapsedIds.push(sectionId);
+
+    section.modules.forEach((module) => {
+      const modname = (module.modname || "").trim().toLowerCase();
+      if (modname === "label") return;
+      collapsedIds.push(`module:${section.id}:${module.id}`);
+    });
+  });
+
+  return collapsedIds;
+}
 
 function formatDueDateTime(unixTimestamp: number): string {
   const value = new Date(unixTimestamp * 1000);
@@ -85,6 +105,11 @@ export default function Dashboard({
   const [coursePageLoading, setCoursePageLoading] = useState(false);
   const [coursePageError, setCoursePageError] = useState("");
   const [courseScrollOffset, setCourseScrollOffset] = useState(0);
+  const [courseSelectedIndex, setCourseSelectedIndex] = useState(0);
+  const [collapsedCourseNodeIds, setCollapsedCourseNodeIds] = useState<string[]>([]);
+  const [pendingCourseTreeInitCourseId, setPendingCourseTreeInitCourseId] = useState<number | null>(
+    null,
+  );
 
   useInputCapture(courseFinderOpen);
 
@@ -172,9 +197,12 @@ export default function Dashboard({
       setViewMode("course");
       setCourseFinderOpen(false);
       setCourseScrollOffset(0);
+      setCourseSelectedIndex(0);
+      setCollapsedCourseNodeIds(buildDefaultCollapsedNodeIds(courseSectionsById[course.id] ?? []));
+      setPendingCourseTreeInitCourseId(course.id);
       await loadCourseContents(course.id, false);
     },
-    [loadCourseContents],
+    [courseSectionsById, loadCourseContents],
   );
 
   const activeCourse = useMemo(() => {
@@ -198,9 +226,31 @@ export default function Dashboard({
       ? (courseSectionsById[activeCourse.id] ?? [])
       : [];
 
-  const courseContentLines = useMemo(
-    () => buildCourseContentLines(activeSections),
-    [activeSections],
+  useEffect(() => {
+    if (viewMode !== "course") return;
+    if (activeCourseId === null) return;
+    if (pendingCourseTreeInitCourseId !== activeCourseId) return;
+    if (activeSections.length === 0 && coursePageLoading) return;
+
+    setCollapsedCourseNodeIds(buildDefaultCollapsedNodeIds(activeSections));
+    setCourseSelectedIndex(0);
+    setCourseScrollOffset(0);
+    setPendingCourseTreeInitCourseId(null);
+  }, [
+    activeCourseId,
+    activeSections,
+    coursePageLoading,
+    pendingCourseTreeInitCourseId,
+    viewMode,
+  ]);
+
+  const collapsedCourseNodeIdSet = useMemo(
+    () => new Set(collapsedCourseNodeIds),
+    [collapsedCourseNodeIds],
+  );
+  const courseRows = useMemo(
+    () => buildCourseTreeRows(activeSections, collapsedCourseNodeIdSet),
+    [activeSections, collapsedCourseNodeIdSet],
   );
 
   const termWidth = Math.max(70, stdout?.columns ?? 120);
@@ -220,15 +270,58 @@ export default function Dashboard({
   const assignmentWidth = Math.max(18, termWidth - dueWidth - courseWidth - 8);
 
   const contentRows = Math.max(4, bodyHeight - 2);
-  const maxCourseScrollOffset = Math.max(0, courseContentLines.length - contentRows);
+  const maxCourseScrollOffset = Math.max(0, courseRows.length - contentRows);
+  const maxCourseRowIndex = Math.max(courseRows.length - 1, 0);
 
   useEffect(() => {
-    setCourseScrollOffset((previous) => Math.min(previous, maxCourseScrollOffset));
-  }, [maxCourseScrollOffset]);
+    setCourseSelectedIndex((previous) => Math.min(previous, maxCourseRowIndex));
+  }, [maxCourseRowIndex]);
+
+  useEffect(() => {
+    setCourseScrollOffset((previous) => {
+      const clampedPrevious = Math.min(previous, maxCourseScrollOffset);
+      if (courseRows.length === 0) return 0;
+
+      if (courseSelectedIndex < clampedPrevious) {
+        return courseSelectedIndex;
+      }
+
+      if (courseSelectedIndex >= clampedPrevious + contentRows) {
+        return Math.min(
+          Math.max(0, courseSelectedIndex - contentRows + 1),
+          maxCourseScrollOffset,
+        );
+      }
+
+      return clampedPrevious;
+    });
+  }, [contentRows, courseRows.length, courseSelectedIndex, maxCourseScrollOffset]);
 
   useEffect(() => {
     setDashboardScrollOffset((previous) => Math.min(previous, maxDashboardScrollOffset));
   }, [maxDashboardScrollOffset]);
+
+  const moveCourseSelection = useCallback(
+    (delta: number) => {
+      setCourseSelectedIndex((previous) =>
+        Math.max(0, Math.min(previous + delta, maxCourseRowIndex)),
+      );
+    },
+    [maxCourseRowIndex],
+  );
+
+  const setCourseNodeCollapsed = useCallback((nodeId: string, collapsed: boolean) => {
+    setCollapsedCourseNodeIds((previous) => {
+      const alreadyCollapsed = previous.includes(nodeId);
+      if (collapsed) {
+        if (alreadyCollapsed) return previous;
+        return [...previous, nodeId];
+      }
+
+      if (!alreadyCollapsed) return previous;
+      return previous.filter((id) => id !== nodeId);
+    });
+  }, []);
 
   useStableInput(
     (input, key) => {
@@ -253,32 +346,68 @@ export default function Dashboard({
         }
 
         if (isShortcutPressed("dashboard-up", input, key)) {
-          setCourseScrollOffset((previous) => Math.max(0, previous - 1));
+          moveCourseSelection(-1);
           return;
         }
 
         if (isShortcutPressed("dashboard-down", input, key)) {
-          setCourseScrollOffset((previous) => Math.min(maxCourseScrollOffset, previous + 1));
+          moveCourseSelection(1);
           return;
         }
 
         if (isShortcutPressed("dashboard-page-up", input, key)) {
-          setCourseScrollOffset((previous) => Math.max(0, previous - pageJump));
+          moveCourseSelection(-pageJump);
           return;
         }
 
         if (isShortcutPressed("dashboard-page-down", input, key)) {
-          setCourseScrollOffset((previous) => Math.min(maxCourseScrollOffset, previous + pageJump));
+          moveCourseSelection(pageJump);
           return;
         }
 
         if (isShortcutPressed("dashboard-home", input, key)) {
-          setCourseScrollOffset(0);
+          setCourseSelectedIndex(0);
           return;
         }
 
         if (isShortcutPressed("dashboard-end", input, key)) {
-          setCourseScrollOffset(maxCourseScrollOffset);
+          setCourseSelectedIndex(maxCourseRowIndex);
+          return;
+        }
+
+        if (isShortcutPressed("dashboard-expand", input, key)) {
+          const selectedRow = courseRows[courseSelectedIndex];
+          if (!selectedRow || !selectedRow.collapsible) return;
+
+          if (!selectedRow.expanded) {
+            setCourseNodeCollapsed(selectedRow.id, false);
+            return;
+          }
+
+          const firstChildIndex = courseRows.findIndex(
+            (row, index) => index > courseSelectedIndex && row.parentId === selectedRow.id,
+          );
+          if (firstChildIndex !== -1) {
+            setCourseSelectedIndex(firstChildIndex);
+          }
+          return;
+        }
+
+        if (isShortcutPressed("dashboard-collapse", input, key)) {
+          const selectedRow = courseRows[courseSelectedIndex];
+          if (!selectedRow) return;
+
+          if (selectedRow.collapsible && selectedRow.expanded) {
+            setCourseNodeCollapsed(selectedRow.id, true);
+            return;
+          }
+
+          if (selectedRow.parentId) {
+            const parentIndex = courseRows.findIndex((row) => row.id === selectedRow.parentId);
+            if (parentIndex !== -1) {
+              setCourseSelectedIndex(parentIndex);
+            }
+          }
         }
         return;
       }
@@ -428,7 +557,8 @@ export default function Dashboard({
           bodyHeight={bodyHeight}
           course={activeCourse}
           sections={activeSections}
-          contentLines={courseContentLines}
+          rows={courseRows}
+          selectedIndex={courseSelectedIndex}
           scrollOffset={courseScrollOffset}
           loading={coursePageLoading}
           error={coursePageError}
