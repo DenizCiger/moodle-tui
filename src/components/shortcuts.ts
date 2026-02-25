@@ -59,19 +59,31 @@ const SHORTCUTS: ShortcutDefinition[] = [
   {
     id: "courses-refresh",
     keys: "r",
-    action: "Refresh course list",
+    action: "Refresh course list / active course page",
     match: (input) => input === "r",
+  },
+  {
+    id: "courses-open",
+    keys: "Enter",
+    action: "Open selected course page",
+    match: (_input, key) => key.return,
+  },
+  {
+    id: "course-back",
+    keys: "Esc",
+    action: "Back to course list",
+    match: (_input, key) => key.escape,
   },
   {
     id: "courses-up",
     keys: "Up",
-    action: "Move selection up",
+    action: "Move selection / scroll up",
     match: (_input, key) => key.upArrow,
   },
   {
     id: "courses-down",
     keys: "Down",
-    action: "Move selection down",
+    action: "Move selection / scroll down",
     match: (_input, key) => key.downArrow,
   },
   {
@@ -97,6 +109,30 @@ const SHORTCUTS: ShortcutDefinition[] = [
     keys: "End",
     action: "Jump to last course",
     match: (_input, key) => key.end,
+  },
+  {
+    id: "courses-search",
+    keys: "/",
+    action: "Open course search",
+    match: (input) => input === "/",
+  },
+  {
+    id: "courses-search-clear",
+    keys: "c",
+    action: "Clear course search",
+    match: (input) => input === "c",
+  },
+  {
+    id: "courses-search-submit",
+    keys: "Enter",
+    action: "Close search input",
+    match: (_input, key) => key.return,
+  },
+  {
+    id: "courses-search-cancel",
+    keys: "Esc",
+    action: "Cancel search edit",
+    match: (_input, key) => key.escape,
   },
 ];
 
@@ -128,12 +164,23 @@ export function getShortcutSections(_activeTab: TabId): ShortcutSection[] {
     {
       title: "Courses",
       items: pick([
+        "courses-open",
+        "course-back",
         "courses-up",
         "courses-down",
         "courses-page-up",
         "courses-page-down",
         "courses-home",
         "courses-end",
+        "courses-search",
+        "courses-search-clear",
+      ]),
+    },
+    {
+      title: "Course Search Input",
+      items: pick([
+        "courses-search-submit",
+        "courses-search-cancel",
       ]),
     },
   ];

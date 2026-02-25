@@ -43,6 +43,10 @@ bun run bin/moodle.js
 - `↑` / `↓` move selection
 - `PageUp` / `PageDown` jump
 - `Home` / `End` jump to start/end
+- `Enter` open selected course page
+- `Esc` return from course page
+- `/` open live fuzzy search
+- `c` clear search filter
 
 ## Tests
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeCourse, normalizeTokenResponse } from "./moodle.ts";
+import {
+  normalizeCourse,
+  normalizeCourseSection,
+  normalizeTokenResponse,
+} from "./moodle.ts";
 
 describe("moodle response normalization", () => {
   it("normalizes token success payload", () => {
@@ -42,5 +46,38 @@ describe("moodle response normalization", () => {
     expect(course?.categoryname).toBe("STEM");
     expect(course?.visible).toBe(1);
     expect(course?.progress).toBe(75.4);
+  });
+
+  it("normalizes course section payload", () => {
+    const section = normalizeCourseSection({
+      id: 10,
+      name: "Week 1",
+      section: 1,
+      summary: "<p>Intro</p>",
+      visible: 1,
+      modules: [
+        {
+          id: 55,
+          name: "Lecture Notes",
+          modname: "resource",
+          description: "<p>Read this first</p>",
+          url: "https://moodle.school.tld/mod/resource/view.php?id=55",
+          visible: 1,
+          contents: [
+            {
+              type: "file",
+              filename: "notes.pdf",
+              fileurl: "https://moodle.school.tld/pluginfile.php/notes.pdf",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(section).not.toBeNull();
+    expect(section?.id).toBe(10);
+    expect(section?.modules.length).toBe(1);
+    expect(section?.modules[0]?.id).toBe(55);
+    expect(section?.modules[0]?.contents[0]?.filename).toBe("notes.pdf");
   });
 });

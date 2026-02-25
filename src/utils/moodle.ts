@@ -23,6 +23,36 @@ export interface MoodleCourse {
   courseurl?: string;
 }
 
+export interface MoodleCourseModuleContentItem {
+  type?: string;
+  filename?: string;
+  filepath?: string;
+  filesize?: number;
+  fileurl?: string;
+  mimetype?: string;
+  timemodified?: number;
+  url?: string;
+}
+
+export interface MoodleCourseModule {
+  id: number;
+  name: string;
+  modname?: string;
+  description?: string;
+  url?: string;
+  visible?: number;
+  contents: MoodleCourseModuleContentItem[];
+}
+
+export interface MoodleCourseSection {
+  id: number;
+  name?: string;
+  section?: number;
+  summary?: string;
+  visible?: number;
+  modules: MoodleCourseModule[];
+}
+
 type JsonRecord = Record<string, unknown>;
 
 function asRecord(payload: unknown): JsonRecord | null {
@@ -211,6 +241,74 @@ export function normalizeCourse(payload: unknown): MoodleCourse | null {
   return normalizeCourseRecord(record);
 }
 
+function normalizeCourseModuleContentItem(
+  payload: unknown,
+): MoodleCourseModuleContentItem | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+
+  return {
+    type: asString(record.type),
+    filename: asString(record.filename),
+    filepath: asString(record.filepath),
+    filesize: asNumber(record.filesize),
+    fileurl: asString(record.fileurl),
+    mimetype: asString(record.mimetype),
+    timemodified: asNumber(record.timemodified),
+    url: asString(record.url),
+  };
+}
+
+function normalizeCourseModuleRecord(record: JsonRecord): MoodleCourseModule | null {
+  const id = asNumber(record.id);
+  const name = asString(record.name);
+  if (id === undefined || !name) return null;
+
+  const contents = Array.isArray(record.contents)
+    ? record.contents
+        .map((item) => normalizeCourseModuleContentItem(item))
+        .filter((item): item is MoodleCourseModuleContentItem => Boolean(item))
+    : [];
+
+  return {
+    id,
+    name,
+    modname: asString(record.modname),
+    description: asString(record.description),
+    url: asString(record.url),
+    visible: toVisibleNumber(record.visible),
+    contents,
+  };
+}
+
+function normalizeCourseSectionRecord(record: JsonRecord): MoodleCourseSection | null {
+  const id = asNumber(record.id);
+  if (id === undefined) return null;
+
+  const modules = Array.isArray(record.modules)
+    ? record.modules
+        .map((item) => asRecord(item))
+        .filter((item): item is JsonRecord => Boolean(item))
+        .map((item) => normalizeCourseModuleRecord(item))
+        .filter((item): item is MoodleCourseModule => Boolean(item))
+    : [];
+
+  return {
+    id,
+    name: asString(record.name),
+    section: asNumber(record.section),
+    summary: asString(record.summary),
+    visible: toVisibleNumber(record.visible),
+    modules,
+  };
+}
+
+export function normalizeCourseSection(payload: unknown): MoodleCourseSection | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  return normalizeCourseSectionRecord(record);
+}
+
 function extractUserId(payload: unknown): number | null {
   const record = asRecord(payload);
   if (!record) return null;
@@ -251,4 +349,28 @@ export async function fetchCourses(config: MoodleRuntimeConfig): Promise<MoodleC
     .sort((left, right) => left.fullname.localeCompare(right.fullname, undefined, { sensitivity: "base" }));
 
   return courses;
+}
+
+export async function fetchCourseContents(
+  config: MoodleRuntimeConfig,
+  courseId: number,
+): Promise<MoodleCourseSection[]> {
+  const token = await requestToken(config);
+
+  const rawSections = await callMoodleWebservice(
+    config,
+    token,
+    "core_course_get_contents",
+    { courseid: String(courseId) },
+  );
+
+  if (!Array.isArray(rawSections)) {
+    throw new Error("Unexpected Moodle response for course contents");
+  }
+
+  return rawSections
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is JsonRecord => Boolean(entry))
+    .map((entry) => normalizeCourseSectionRecord(entry))
+    .filter((entry): entry is MoodleCourseSection => Boolean(entry));
 }
