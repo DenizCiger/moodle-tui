@@ -476,12 +476,13 @@ export default function Dashboard({
     setPendingCourseJumpRowId(null);
   }, [courseRows, pendingCourseJumpRowId]);
 
-  const termWidth = Math.max(70, stdout?.columns ?? 120);
-  const termHeight = Math.max(18, (stdout?.rows ?? 24) - topInset);
-  const bodyHeight = Math.max(8, termHeight - 7);
-  const pageJump = Math.max(4, Math.floor(bodyHeight / 3));
+  const termWidth = stdout?.columns && stdout.columns > 0 ? stdout.columns : 120;
+  const stdoutRows = stdout?.rows && stdout.rows > 0 ? stdout.rows : 24;
+  const termHeight = Math.max(1, stdoutRows - topInset);
+  const bodyHeight = Math.max(1, termHeight - 7);
+  const pageJump = Math.max(1, Math.floor(bodyHeight / 3));
 
-  const dashboardRows = Math.max(4, bodyHeight - 2);
+  const dashboardRows = Math.max(1, bodyHeight - 2);
   const maxDashboardRowIndex = Math.max(upcomingAssignments.length - 1, 0);
   const maxDashboardScrollOffset = Math.max(0, upcomingAssignments.length - dashboardRows);
   const visibleAssignments = upcomingAssignments.slice(
@@ -489,11 +490,14 @@ export default function Dashboard({
     dashboardScrollOffset + dashboardRows,
   );
 
-  const dueWidth = Math.max(16, Math.floor((termWidth - 8) * 0.2));
-  const courseWidth = Math.max(14, Math.floor((termWidth - 8) * 0.28));
-  const assignmentWidth = Math.max(18, termWidth - dueWidth - courseWidth - 8);
+  const compactDashboardTable = termWidth < 72;
+  const dueWidth = compactDashboardTable ? 0 : Math.max(16, Math.floor((termWidth - 8) * 0.2));
+  const courseWidth = compactDashboardTable ? 0 : Math.max(14, Math.floor((termWidth - 8) * 0.28));
+  const assignmentWidth = compactDashboardTable
+    ? Math.max(1, termWidth - 4)
+    : Math.max(18, termWidth - dueWidth - courseWidth - 8);
 
-  const contentRows = Math.max(4, bodyHeight - 2);
+  const contentRows = Math.max(1, bodyHeight - 2);
   const maxCourseScrollOffset = Math.max(0, courseRows.length - contentRows);
   const maxCourseRowIndex = Math.max(courseRows.length - 1, 0);
 
@@ -1158,13 +1162,20 @@ export default function Dashboard({
         <Text bold color={COLORS.brand}>
           {viewMode === "course" ? "Moodle Course Page" : "Moodle Dashboard"}
         </Text>
-        <Text dimColor>{truncateText(`${config.username} @ ${config.baseUrl}`, 56)}</Text>
+        <Text dimColor>
+          {truncateText(`${config.username} @ ${config.baseUrl}`, Math.max(1, Math.floor(termWidth * 0.6)))}
+        </Text>
       </Box>
 
       {viewMode === "dashboard" ? (
         <>
           <Box justifyContent="space-between">
-            <Text dimColor>{`Upcoming: ${upcomingAssignments.length} | Courses: ${courses.length}`}</Text>
+            <Text dimColor>
+              {truncateText(
+                `Upcoming: ${upcomingAssignments.length} | Courses: ${courses.length}`,
+                Math.max(1, termWidth - 24),
+              )}
+            </Text>
             <Text color={dataSource === "cache" ? COLORS.warning : COLORS.neutral.gray}>
               {dataSource === "live"
                 ? "Source: live"
@@ -1175,7 +1186,12 @@ export default function Dashboard({
           </Box>
 
           <Box minHeight={1}>
-            <Text dimColor>Press Enter to open selected assignment, / for course finder.</Text>
+            <Text dimColor>
+              {truncateText(
+                "Press Enter to open selected assignment, / for course finder.",
+                Math.max(1, termWidth - 2),
+              )}
+            </Text>
           </Box>
 
           <Box
@@ -1206,23 +1222,31 @@ export default function Dashboard({
               </Box>
             ) : (
               <Box flexDirection="column" paddingX={1}>
-                <Box>
-                  <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
-                    {fitText("Due", dueWidth)}
-                  </Text>
-                  <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
-                    {" "}
-                  </Text>
-                  <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
-                    {fitText("Course", courseWidth)}
-                  </Text>
-                  <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
-                    {" "}
-                  </Text>
-                  <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
-                    {fitText("Assignment", assignmentWidth)}
-                  </Text>
-                </Box>
+                {compactDashboardTable ? (
+                  <Box>
+                    <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
+                      {fitText("Due | Assignment · Course", assignmentWidth)}
+                    </Text>
+                  </Box>
+                ) : (
+                  <Box>
+                    <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
+                      {fitText("Due", dueWidth)}
+                    </Text>
+                    <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
+                      {" "}
+                    </Text>
+                    <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
+                      {fitText("Course", courseWidth)}
+                    </Text>
+                    <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
+                      {" "}
+                    </Text>
+                    <Text color={COLORS.neutral.gray} backgroundColor={COLORS.panel.header}>
+                      {fitText("Assignment", assignmentWidth)}
+                    </Text>
+                  </Box>
+                )}
 
                 {visibleAssignments.map((assignment, index) => {
                   const absoluteIndex = dashboardScrollOffset + index;
@@ -1234,6 +1258,23 @@ export default function Dashboard({
                       : undefined;
                   const courseLabel =
                     assignment.courseFullName || assignment.courseShortName || "Unknown course";
+
+                  if (compactDashboardTable) {
+                    return (
+                      <Box key={`${assignment.courseId}-${assignment.id}`}>
+                        <Text
+                          color={COLORS.neutral.white}
+                          backgroundColor={rowBackgroundColor}
+                          bold={selected}
+                        >
+                          {fitText(
+                            `${formatDueDateTime(assignment.dueDate)} | ${assignment.name} · ${courseLabel}`,
+                            assignmentWidth,
+                          )}
+                        </Text>
+                      </Box>
+                    );
+                  }
 
                   return (
                     <Box key={`${assignment.courseId}-${assignment.id}`}>
@@ -1283,7 +1324,7 @@ export default function Dashboard({
 
       {error && (
         <Box marginTop={1}>
-          <Text color={COLORS.error}>{truncateText(error, Math.max(16, termWidth - 2))}</Text>
+          <Text color={COLORS.error}>{truncateText(error, Math.max(1, termWidth - 2))}</Text>
         </Box>
       )}
 
@@ -1353,7 +1394,7 @@ export default function Dashboard({
             backgroundColor={COLORS.neutral.black}
           >
             <Text color={copyToastTextColor}>
-              {truncateText(copyToast.message, Math.max(16, Math.min(58, termWidth - 10)))}
+              {truncateText(copyToast.message, Math.max(1, Math.min(58, termWidth - 10)))}
             </Text>
           </Box>
         </Box>

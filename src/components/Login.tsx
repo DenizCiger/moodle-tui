@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
 import { COLORS } from "./colors.ts";
+import { truncateText } from "./timetable/text.ts";
 import {
   DEFAULT_MOODLE_SERVICE,
   type MoodleRuntimeConfig,
@@ -48,6 +49,7 @@ export default function Login({
   error: appError,
   secureStorageNotice,
 }: LoginProps) {
+  const { stdout } = useStdout();
   const [values, setValues] = useState<Record<Field, string>>({
     baseUrl: initialConfig?.baseUrl || "",
     username: initialConfig?.username || "",
@@ -58,6 +60,13 @@ export default function Login({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const termWidth = stdout?.columns && stdout.columns > 0 ? stdout.columns : 120;
+  const contentWidth = Math.max(1, termWidth - 2);
+  const labelWidth = Math.max(
+    1,
+    Math.min(Math.max(4, Math.floor(contentWidth * 0.24)), Math.max(1, contentWidth - 3)),
+  );
+  const valueWidth = Math.max(0, contentWidth - labelWidth - 3);
 
   useInput(
     (input, key) => {
@@ -113,37 +122,37 @@ export default function Login({
   };
 
   return (
-    <Box flexDirection="column" padding={1}>
+    <Box flexDirection="column" width={termWidth} padding={1}>
       <Box marginBottom={1}>
         <Text bold color={COLORS.brand}>
-          Moodle TUI - Login
+          {truncateText("Moodle TUI - Login", contentWidth)}
         </Text>
       </Box>
 
       <Box marginBottom={1}>
         <Text dimColor>
-          Enter Moodle credentials. Use arrows or Tab to change focus.
+          {truncateText("Enter Moodle credentials. Use arrows or Tab to change focus.", contentWidth)}
         </Text>
       </Box>
 
       <Box marginBottom={1}>
         <Text dimColor>
-          Password is stored securely via your OS credentials store.
+          {truncateText("Password is stored securely via your OS credentials store.", contentWidth)}
         </Text>
       </Box>
 
       {FIELDS.map((field, index) => (
-        <Box key={field.key}>
-          <Box width={12}>
+        <Box key={field.key} width={contentWidth}>
+          <Box width={labelWidth}>
             <Text
               color={index === activeField ? COLORS.brand : COLORS.neutral.white}
               bold={index === activeField}
             >
               {index === activeField ? "> " : "  "}
-              {field.label}:
+              {truncateText(`${field.label}:`, Math.max(1, labelWidth - 2))}
             </Text>
           </Box>
-          <Box marginLeft={1}>
+          <Box marginLeft={1} width={valueWidth}>
             {index === activeField && !loading ? (
               <TextInput
                 value={values[field.key]}
@@ -161,11 +170,14 @@ export default function Login({
               />
             ) : (
               <Text dimColor={index !== activeField}>
-                {field.key === "password"
-                  ? showPassword
-                    ? values.password || field.placeholder
-                    : "*".repeat(values.password.length) || field.placeholder
-                  : values[field.key] || field.placeholder}
+                {truncateText(
+                  field.key === "password"
+                    ? showPassword
+                      ? values.password || field.placeholder
+                      : "*".repeat(values.password.length) || field.placeholder
+                    : values[field.key] || field.placeholder,
+                  valueWidth,
+                )}
               </Text>
             )}
           </Box>
@@ -183,20 +195,23 @@ export default function Login({
 
       {(appError || error) && (
         <Box marginTop={1}>
-          <Text color={COLORS.error}>{appError || error}</Text>
+          <Text color={COLORS.error}>{truncateText(appError || error, contentWidth)}</Text>
         </Box>
       )}
 
       {secureStorageNotice && (
         <Box marginTop={1}>
-          <Text color={COLORS.warning}>{secureStorageNotice}</Text>
+          <Text color={COLORS.warning}>{truncateText(secureStorageNotice, contentWidth)}</Text>
         </Box>
       )}
 
       {!loading && (
         <Box marginTop={1}>
           <Text dimColor>
-            Enter next/submit | Tab move focus | v toggle password visibility
+            {truncateText(
+              "Enter next/submit | Tab move focus | v toggle password visibility",
+              contentWidth,
+            )}
           </Text>
         </Box>
       )}

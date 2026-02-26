@@ -279,12 +279,14 @@ export default function CoursePage({
   loading,
   error,
 }: CoursePageProps) {
-  const contentRows = Math.max(4, bodyHeight - 2);
+  const contentRows = Math.max(1, bodyHeight - 2);
   const visibleRows = rows.slice(scrollOffset, scrollOffset + contentRows);
   const totalRows = rows.length;
   const visibleStart = totalRows > 0 ? Math.min(scrollOffset + 1, totalRows) : 0;
   const visibleEnd = totalRows > 0 ? Math.min(scrollOffset + visibleRows.length, totalRows) : 0;
-  const maxLineWidth = Math.max(16, termWidth - 4);
+  const maxLineWidth = Math.max(1, termWidth - 4);
+  const showSectionCount = termWidth >= 56;
+  const headingWidth = showSectionCount ? Math.max(1, termWidth - 30) : Math.max(1, termWidth - 4);
 
   const renderTreePrefix = (row: CourseTreeRow): string => {
     const indent = "  ".repeat(Math.max(0, row.depth));
@@ -303,8 +305,8 @@ export default function CoursePage({
   return (
     <>
       <Box justifyContent="space-between">
-        <Text dimColor>{truncateText(course?.fullname || "Course", Math.max(20, termWidth - 30))}</Text>
-        <Text dimColor>{course ? `Sections: ${sections.length}` : ""}</Text>
+        <Text dimColor>{truncateText(course?.fullname || "Course", headingWidth)}</Text>
+        {showSectionCount && <Text dimColor>{course ? `Sections: ${sections.length}` : ""}</Text>}
       </Box>
 
       <Box
@@ -354,8 +356,8 @@ export default function CoursePage({
                 >
                   {isLabel ? (
                     <>
-                      {truncateText(`${renderTreePrefix(row)} `, maxLineWidth)}
-                      <Text underline>{truncateText(row.text, maxLineWidth)}</Text>
+                      <Text>{truncateText(`${renderTreePrefix(row)} `, Math.max(1, maxLineWidth - 1))}</Text>
+                      <Text underline>{truncateText(row.text, Math.max(1, maxLineWidth - renderTreePrefix(row).length - 1))}</Text>
                     </>
                   ) : (
                     truncateText(renderTreeLine(row), maxLineWidth)

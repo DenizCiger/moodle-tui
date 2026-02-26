@@ -5,6 +5,7 @@ import type { MoodleCourse } from "../utils/moodle.ts";
 import { COLORS } from "./colors.ts";
 import { filterCoursesByFuzzyQuery } from "./courseSearch.ts";
 import TextInput from "./TextInput.tsx";
+import { truncateText } from "./timetable/text.ts";
 
 interface CourseFinderOverlayProps {
   termWidth: number;
@@ -32,9 +33,12 @@ export default function CourseFinderOverlay({
     [courses, draft],
   );
 
-  const modalWidth = Math.max(56, Math.min(112, termWidth - 8));
-  const modalHeight = Math.max(12, Math.min(30, termHeight - 4));
-  const rows = Math.max(3, modalHeight - 7);
+  const maxModalWidth = Math.max(1, termWidth - 2);
+  const maxModalHeight = Math.max(1, termHeight - 2);
+  const modalWidth = Math.min(maxModalWidth, Math.max(28, Math.min(112, termWidth - 8)));
+  const modalHeight = Math.min(maxModalHeight, Math.max(10, Math.min(30, termHeight - 4)));
+  const rows = Math.max(1, modalHeight - 7);
+  const resultLineWidth = Math.max(1, modalWidth - 6);
 
   const visibleResults = useMemo(
     () => searchResults.slice(scrollOffset, scrollOffset + rows),
@@ -178,7 +182,9 @@ export default function CourseFinderOverlay({
               <Spinner type="dots" /> Loading courses...
             </Text>
           ) : (
-            <Text dimColor>Use ↑/↓, PgUp/PgDn, Home/End, Enter apply, Esc cancel.</Text>
+            <Text dimColor>
+              {truncateText("Use ↑/↓, PgUp/PgDn, Home/End, Enter apply, Esc cancel.", Math.max(1, modalWidth - 4))}
+            </Text>
           )}
         </Box>
 
@@ -196,7 +202,7 @@ export default function CourseFinderOverlay({
                   <Text color={selected ? COLORS.brand : COLORS.neutral.gray} bold={selected}>
                     {selected ? "> " : "  "}
                   </Text>
-                  <Text>{course.fullname}</Text>
+                  <Text>{truncateText(course.fullname, resultLineWidth)}</Text>
                 </Box>
               );
             })}

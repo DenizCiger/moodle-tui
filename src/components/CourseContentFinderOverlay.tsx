@@ -147,10 +147,12 @@ export default function CourseContentFinderOverlay({
     [targetedRows, draft],
   );
 
-  const modalWidth = Math.max(56, Math.min(112, termWidth - 8));
-  const modalHeight = Math.max(12, Math.min(30, termHeight - 4));
-  const resultRows = Math.max(3, modalHeight - 7);
-  const maxLineWidth = Math.max(16, modalWidth - 6);
+  const maxModalWidth = Math.max(1, termWidth - 2);
+  const maxModalHeight = Math.max(1, termHeight - 2);
+  const modalWidth = Math.min(maxModalWidth, Math.max(28, Math.min(112, termWidth - 8)));
+  const modalHeight = Math.min(maxModalHeight, Math.max(10, Math.min(30, termHeight - 4)));
+  const resultRows = Math.max(1, modalHeight - 7);
+  const maxLineWidth = Math.max(1, modalWidth - 6);
 
   const visibleResults = useMemo(
     () => searchResults.slice(scrollOffset, scrollOffset + resultRows),
@@ -237,9 +239,12 @@ export default function CourseContentFinderOverlay({
             Course Content Finder
           </Text>
           <Text dimColor>
-            {searchResults.length > 0
-              ? `${activeTarget?.label || "All"} · ${Math.min(selectedIdx + 1, searchResults.length)}/${searchResults.length}`
-              : "0/0"}
+            {truncateText(
+              searchResults.length > 0
+                ? `${activeTarget?.label || "All"} · ${Math.min(selectedIdx + 1, searchResults.length)}/${searchResults.length}`
+                : "0/0",
+              Math.max(1, modalWidth - 24),
+            )}
           </Text>
         </Box>
 
@@ -314,7 +319,12 @@ export default function CourseContentFinderOverlay({
               <Spinner type="dots" /> Loading course content...
             </Text>
           ) : (
-            <Text dimColor>Use ←/→ target type, ↑/↓ move, PgUp/PgDn, Home/End, Enter apply, Esc cancel.</Text>
+            <Text dimColor>
+              {truncateText(
+                "Use ←/→ target type, ↑/↓ move, PgUp/PgDn, Home/End, Enter apply, Esc cancel.",
+                Math.max(1, modalWidth - 4),
+              )}
+            </Text>
           )}
         </Box>
 

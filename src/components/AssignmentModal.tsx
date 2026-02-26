@@ -218,20 +218,29 @@ export default function AssignmentModal({
 }: AssignmentModalProps) {
   void onClose;
 
-  const modalWidth = Math.max(68, Math.min(118, termWidth - 6));
-  const modalHeight = Math.max(20, Math.min(38, termHeight - 4));
+  const maxModalWidth = Math.max(1, termWidth - 2);
+  const maxModalHeight = Math.max(1, termHeight - 2);
+  const modalWidth = Math.min(maxModalWidth, Math.max(44, Math.min(118, termWidth - 6)));
+  const modalHeight = Math.min(maxModalHeight, Math.max(16, Math.min(38, termHeight - 4)));
   const statusBadge = buildStatusBadge(loading, detailError, statusError, statusLoading);
   const title = detail?.name || context.moduleName || "Assignment";
-  const tableLabelWidth = Math.max(20, Math.min(26, Math.floor((modalWidth - 6) * 0.32)));
-  const tableValueWidth = Math.max(22, modalWidth - tableLabelWidth - 8);
-  const divider = "─".repeat(Math.max(8, modalWidth - 4));
+  const tableContentWidth = Math.max(1, modalWidth - 5);
+  const tableSeparatorWidth = tableContentWidth >= 3 ? 1 : 0;
+  const tableCellWidth = Math.max(1, tableContentWidth - tableSeparatorWidth);
+  const tableLabelWidth = Math.max(1, Math.min(26, Math.floor(tableCellWidth * 0.34)));
+  const tableValueWidth = Math.max(1, tableCellWidth - tableLabelWidth);
+  const divider = "─".repeat(Math.max(1, modalWidth - 4));
+  const dateLineWidth = Math.max(1, modalWidth - 4);
+  const dateLabelWidth = Math.max(1, Math.min(10, Math.floor(dateLineWidth * 0.2)));
+  const dateValueWidth = Math.max(1, dateLineWidth - dateLabelWidth);
+  const compactActions = modalWidth < 72;
 
   const descriptionLines = useMemo(() => {
     const source =
       stripHtml(detail?.intro) ||
       stripHtml(context.moduleDescription) ||
       "No assignment description available.";
-    return wrapText(source, Math.max(16, modalWidth - 4)).slice(0, 2);
+    return wrapText(source, Math.max(1, modalWidth - 4)).slice(0, 2);
   }, [context.moduleDescription, detail?.intro, modalWidth]);
 
   const actionChips = useMemo(() => {
@@ -297,14 +306,14 @@ export default function AssignmentModal({
       >
         <Box justifyContent="space-between">
           <Text bold color={COLORS.brand}>
-            {truncateText(title, Math.max(20, modalWidth - 22))}
+            {truncateText(title, Math.max(1, modalWidth - 18))}
           </Text>
           <Text color={COLORS.neutral.gray}>{statusBadge}</Text>
         </Box>
 
         <Box minHeight={1}>
           <Text color={detailError ? COLORS.error : statusError ? COLORS.warning : COLORS.neutral.gray}>
-            {truncateText(headlineMessage, Math.max(16, modalWidth - 4))}
+            {truncateText(headlineMessage, Math.max(1, modalWidth - 4))}
           </Text>
         </Box>
 
@@ -312,16 +321,16 @@ export default function AssignmentModal({
 
         <Box flexDirection="column">
           <Box>
-            <Text bold>{fitText("Opened:", 10)}</Text>
-            <Text>{truncateText(formatDateTime(detail?.allowsubmissionsfromdate), modalWidth - 14)}</Text>
+            <Text bold>{fitText("Opened:", dateLabelWidth)}</Text>
+            <Text>{truncateText(formatDateTime(detail?.allowsubmissionsfromdate), dateValueWidth)}</Text>
           </Box>
           <Box>
-            <Text bold>{fitText("Due:", 10)}</Text>
-            <Text>{truncateText(formatDateTime(detail?.duedate), modalWidth - 14)}</Text>
+            <Text bold>{fitText("Due:", dateLabelWidth)}</Text>
+            <Text>{truncateText(formatDateTime(detail?.duedate), dateValueWidth)}</Text>
           </Box>
           <Box>
-            <Text bold>{fitText("Cutoff:", 10)}</Text>
-            <Text>{truncateText(formatDateTime(detail?.cutoffdate), modalWidth - 14)}</Text>
+            <Text bold>{fitText("Cutoff:", dateLabelWidth)}</Text>
+            <Text>{truncateText(formatDateTime(detail?.cutoffdate), dateValueWidth)}</Text>
           </Box>
         </Box>
 
@@ -332,11 +341,20 @@ export default function AssignmentModal({
           <Text dimColor>{truncateText(descriptionLines[1] || "", modalWidth - 4)}</Text>
         </Box>
 
-        <Box marginTop={1}>
+        <Box marginTop={1} flexDirection={compactActions ? "column" : "row"}>
           {actionChips.map((action, index) => (
-            <Box key={action} marginRight={index === actionChips.length - 1 ? 0 : 1}>
+            <Box
+              key={action}
+              marginRight={compactActions || index === actionChips.length - 1 ? 0 : 1}
+              marginTop={compactActions && index > 0 ? 1 : 0}
+            >
               <Text color={BUTTON_FG} backgroundColor={BUTTON_BG}>
-                {` ${truncateText(action, Math.max(8, Math.floor((modalWidth - 8) / 2)))} `}
+                {` ${truncateText(
+                  action,
+                  compactActions
+                    ? Math.max(1, modalWidth - 6)
+                    : Math.max(1, Math.floor((modalWidth - 8) / 2)),
+                )} `}
               </Text>
             </Box>
           ))}
@@ -363,12 +381,12 @@ export default function AssignmentModal({
                 <Text color={COLORS.neutral.white} backgroundColor={labelBg}>
                   {fitText(` ${row.label}`, tableLabelWidth)}
                 </Text>
-                <Text backgroundColor={COLORS.neutral.black}> </Text>
+                {tableSeparatorWidth > 0 && <Text backgroundColor={COLORS.neutral.black}> </Text>}
                 <Text
                   color={statusStyle.color}
                   backgroundColor={statusStyle.backgroundColor}
                 >
-                  {fitText(` ${truncateText(row.value, tableValueWidth - 1)}`, tableValueWidth)}
+                  {fitText(` ${truncateText(row.value, Math.max(1, tableValueWidth - 1))}`, tableValueWidth)}
                 </Text>
               </Box>
             );
@@ -376,7 +394,9 @@ export default function AssignmentModal({
         </Box>
 
         <Box justifyContent="space-between">
-          <Text dimColor>{detail ? `Assignment ID ${detail.id}` : "Assignment ID -"}</Text>
+          <Text dimColor>
+            {modalWidth >= 54 ? (detail ? `Assignment ID ${detail.id}` : "Assignment ID -") : ""}
+          </Text>
           <Text dimColor>Esc close</Text>
         </Box>
       </Box>
