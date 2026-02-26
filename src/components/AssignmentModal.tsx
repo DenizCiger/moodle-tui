@@ -135,14 +135,11 @@ function wrapText(value: string, width: number): string[] {
 
 function formatRelativeDue(
   dueDate: number | undefined,
-  submissionModified: number | undefined,
   availableWidth: number,
 ): string {
   if (!dueDate || dueDate <= 0) return "-";
 
-  const reference = submissionModified && submissionModified > 0
-    ? submissionModified
-    : Math.floor(Date.now() / 1000);
+  const reference = Math.floor(Date.now() / 1000);
   const secondsDelta = dueDate - reference;
   const absolute = Math.abs(secondsDelta);
   const days = Math.floor(absolute / 86400);
@@ -194,6 +191,10 @@ function getStatusCellStyle(rowKey: string, value: string): { color?: string; ba
   }
 
   if (rowKey === "time") {
+    if (normalizedValue === "-" || normalizedValue.includes("loading")) {
+      return { color: COLORS.neutral.white, backgroundColor: STATUS_NEUTRAL_BG };
+    }
+
     if (normalizedValue.includes("late")) {
       return { color: COLORS.neutral.white, backgroundColor: STATUS_WARN_BG };
     }
@@ -257,7 +258,9 @@ export default function AssignmentModal({
     {
       key: "time",
       label: "Time",
-      value: formatRelativeDue(detail?.duedate, status?.lastModified, tableValueWidth - 1),
+      value: loading || statusLoading
+        ? "Loading..."
+        : formatRelativeDue(detail?.duedate, tableValueWidth - 1),
     },
     { key: "modified", label: "Last modified", value: formatDateTime(status?.lastModified) },
     { key: "can-submit", label: "Can submit", value: formatBool(status?.canSubmit) },

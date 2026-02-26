@@ -42,10 +42,10 @@ export default function SettingsModal({ activeTab, width, height }: SettingsModa
             <Box key={section.title} flexDirection="column" marginBottom={1}>
               <Text bold>{section.title}</Text>
               {section.items.map((item) => (
-                <Box key={item.id}>
+                <Box key={item.id} width={keyColumnWidth + 3 + actionWidth}>
                   <Text color={COLORS.warning}>{fitText(item.keys, keyColumnWidth)}</Text>
                   <Text dimColor>{" - "}</Text>
-                  <Text>{truncateText(item.action, actionWidth)}</Text>
+                  <Text>{fitText(item.action, actionWidth)}</Text>
                 </Box>
               ))}
             </Box>

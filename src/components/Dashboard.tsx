@@ -14,7 +14,12 @@ import { useInputCapture } from "./inputCapture.tsx";
 import { isShortcutPressed, type InputKey } from "./shortcuts.ts";
 import { fitText, truncateText } from "./timetable/text.ts";
 import { useStableInput } from "./useStableInput.ts";
-import { getCachedCourses, saveCoursesToCache } from "../utils/cache.ts";
+import {
+  getCachedCourseSections,
+  getCachedDashboard,
+  saveCourseSectionsToCache,
+  saveDashboardToCache,
+} from "../utils/cache.ts";
 import { openUrlInBrowser } from "../utils/browser.ts";
 import { copyTextToClipboard } from "../utils/clipboard.ts";
 import type { MoodleRuntimeConfig } from "../utils/config.ts";
@@ -283,47 +288,58 @@ export default function Dashboard({
 
   const loadDashboard = useCallback(
     async ({ forceRefresh }: { forceRefresh: boolean }) => {
-      setLoading(true);
       if (!forceRefresh) {
         setError("");
+      }
+
+      const cachedDashboard = !forceRefresh ? getCachedDashboard() : null;
+      const hasCachedDashboard = cachedDashboard !== null;
+
+      if (cachedDashboard) {
+        setCourses(cachedDashboard.courses);
+        setUpcomingAssignments(cachedDashboard.upcomingAssignments);
+        setDataSource("cache");
+        setLoading(false);
+      } else {
+        setLoading(true);
       }
 
       try {
         const liveCourses = await fetchCourses(config);
         setCourses(liveCourses);
         setDataSource("live");
-        saveCoursesToCache(liveCourses);
 
         try {
           const assignments = await fetchUpcomingAssignments(config);
-          setUpcomingAssignments(enrichAssignmentsWithCourseNames(assignments, liveCourses));
+          const enrichedAssignments = enrichAssignmentsWithCourseNames(assignments, liveCourses);
+          setUpcomingAssignments(enrichedAssignments);
+          saveDashboardToCache(liveCourses, enrichedAssignments);
           setError("");
         } catch (assignmentError) {
           const message =
             assignmentError instanceof Error ? assignmentError.message : "Unknown Moodle API error";
-          setUpcomingAssignments([]);
+          const fallbackAssignments = enrichAssignmentsWithCourseNames(
+            cachedDashboard?.upcomingAssignments ?? [],
+            liveCourses,
+          );
+          setUpcomingAssignments(fallbackAssignments);
+          saveDashboardToCache(liveCourses, fallbackAssignments);
           setError(`Assignments unavailable: ${message}`);
         }
       } catch (loadError) {
         const message =
           loadError instanceof Error ? loadError.message : "Unknown Moodle API error";
 
-        if (!forceRefresh) {
-          const cachedCourses = getCachedCourses();
-          if (cachedCourses && cachedCourses.length > 0) {
-            setCourses(cachedCourses);
-            setUpcomingAssignments([]);
-            setDataSource("cache");
-            setError(`Live sync failed; showing cached courses. ${message}`);
-          } else {
-            setDataSource("none");
-            setCourses([]);
-            setUpcomingAssignments([]);
-            setDashboardScrollOffset(0);
-            setError(`Failed to load dashboard: ${message}`);
-          }
-        } else {
+        if (forceRefresh) {
           setError(`Refresh failed: ${message}`);
+        } else if (hasCachedDashboard) {
+          setError(`Live sync failed; showing cached dashboard. ${message}`);
+        } else {
+          setDataSource("none");
+          setCourses([]);
+          setUpcomingAssignments([]);
+          setDashboardScrollOffset(0);
+          setError(`Failed to load dashboard: ${message}`);
         }
       } finally {
         setLoading(false);
@@ -334,20 +350,42 @@ export default function Dashboard({
 
   const loadCourseContents = useCallback(
     async (courseId: number, forceRefresh = false) => {
-      if (!forceRefresh && courseSectionsById[courseId]) {
+      const inMemorySections = courseSectionsById[courseId];
+      if (!forceRefresh && inMemorySections) {
         setCoursePageError("");
         return;
       }
 
-      setCoursePageLoading(true);
+      const cachedSections = !forceRefresh ? getCachedCourseSections(courseId) : null;
+      const hasCachedSections = cachedSections !== null;
+
+      if (hasCachedSections) {
+        setCourseSectionsById((previous) => ({
+          ...previous,
+          [courseId]: cachedSections,
+        }));
+        setCoursePageLoading(false);
+      } else {
+        setCoursePageLoading(true);
+      }
+
       setCoursePageError("");
+
       try {
         const sections = await fetchCourseContents(config, courseId);
-        setCourseSectionsById((previous) => ({ ...previous, [courseId]: sections }));
+        setCourseSectionsById((previous) => ({
+          ...previous,
+          [courseId]: sections,
+        }));
+        saveCourseSectionsToCache(courseId, sections);
       } catch (loadError) {
         const message =
           loadError instanceof Error ? loadError.message : "Unknown Moodle API error";
-        setCoursePageError(`Failed to load course page: ${message}`);
+        if (forceRefresh || inMemorySections || hasCachedSections) {
+          setCoursePageError(`Failed to refresh course page: ${message}`);
+        } else {
+          setCoursePageError(`Failed to load course page: ${message}`);
+        }
       } finally {
         setCoursePageLoading(false);
       }
