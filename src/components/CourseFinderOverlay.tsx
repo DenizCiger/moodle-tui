@@ -38,7 +38,7 @@ export default function CourseFinderOverlay({
   const modalWidth = Math.min(maxModalWidth, Math.max(28, Math.min(112, termWidth - 8)));
   const modalHeight = Math.min(maxModalHeight, Math.max(10, Math.min(30, termHeight - 4)));
   const rows = Math.max(1, modalHeight - 7);
-  const resultLineWidth = Math.max(1, modalWidth - 6);
+  const resultLineWidth = Math.max(1, modalWidth - 4);
 
   const visibleResults = useMemo(
     () => searchResults.slice(scrollOffset, scrollOffset + rows),
@@ -198,12 +198,14 @@ export default function CourseFinderOverlay({
               const absoluteIdx = scrollOffset + idx;
               const selected = absoluteIdx === selectedIdx;
               return (
-                <Box key={course.id}>
-                  <Text color={selected ? COLORS.brand : COLORS.neutral.gray} bold={selected}>
-                    {selected ? "> " : "  "}
-                  </Text>
-                  <Text>{truncateText(course.fullname, resultLineWidth)}</Text>
-                </Box>
+                <Text
+                  key={course.id}
+                  color={COLORS.neutral.white}
+                  bold={selected}
+                  backgroundColor={selected ? COLORS.panel.selected : undefined}
+                >
+                  {truncateText(course.fullname, resultLineWidth)}
+                </Text>
               );
             })}
         </Box>
