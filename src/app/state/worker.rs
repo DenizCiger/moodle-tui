@@ -144,21 +144,33 @@ impl AppState {
             return Vec::new();
         }
 
-        self.saved_password = password;
+        self.saved_password = password.clone();
 
         let mut login = LoginState::default();
         login.password.mask = true;
+        let mut auto_login_command: Option<AppCommand> = None;
         if let Some(config) = saved_config {
             login.base_url.set(&config.base_url);
             login.username.set(&config.username);
             login.service.set(&config.service);
+            if storage::session::auto_login_enabled() {
+                if let Some(pw) = password.as_ref() {
+                    login.busy = true;
+                    auto_login_command = Some(AppCommand::ValidateLogin(RuntimeConfig {
+                        base_url: config.base_url.clone(),
+                        username: config.username.clone(),
+                        service: config.service.clone(),
+                        password: pw.clone(),
+                    }));
+                }
+            }
             self.saved_config = Some(config);
         } else {
             login.service.set(crate::models::DEFAULT_MOODLE_SERVICE);
         }
         login.storage_warning = storage_warning;
         self.screen = Screen::Login(login);
-        Vec::new()
+        auto_login_command.map(|c| vec![c]).unwrap_or_default()
     }
 
     fn on_login_validated(&mut self, result: Result<RuntimeConfig, String>) -> Vec<AppCommand> {
@@ -174,6 +186,7 @@ impl AppState {
                 }
                 self.saved_config = Some(saved);
                 self.saved_password = Some(config.password.clone());
+                storage::session::set_auto_login(true);
                 let mut main = MainState::default();
                 main.config = Some(config.clone());
                 main.dashboard.loading = true;
@@ -193,6 +206,7 @@ impl AppState {
                 commands
             }
             Err(error) => {
+                storage::session::set_auto_login(false);
                 if let Screen::Login(login) = &mut self.screen {
                     login.busy = false;
                     login.error = Some(error);

@@ -340,6 +340,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
             tokio::spawn(async move {
                 let saved_config = saved_config.or_else(storage::config::load_config);
                 let _ = storage::cache::clear_cache();
+                storage::session::set_auto_login(false);
                 let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::BootstrapLoaded {
                     saved_config,
                     password,
