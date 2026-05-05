@@ -3,7 +3,7 @@ use crate::app::state::types::Screen;
 use crate::shortcuts::{TabId, get_shortcut_sections};
 use crate::ui::theme;
 use ratatui::Frame;
-use tui_components::ui::settings::{SettingsItemView, SettingsModal, SettingsSectionView};
+use tui_components::ui::settings::SettingsModal;
 use tui_components::ui::theme::Theme;
 
 pub fn render(frame: &mut Frame, state: &AppState) {
@@ -11,21 +11,10 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::MainShell(main) => main.settings_scroll,
         _ => 0,
     };
-    let sections = get_shortcut_sections(TabId::Dashboard)
-        .into_iter()
-        .map(|section| SettingsSectionView {
-            title: section.title.to_owned(),
-            items: section
-                .items
-                .into_iter()
-                .map(|item| SettingsItemView {
-                    keys: item.keys.to_owned(),
-                    action: item.action.to_owned(),
-                })
-                .collect(),
-        })
-        .collect();
-    let mut modal = SettingsModal::new("Keyboard shortcuts", sections);
+    let mut modal = SettingsModal::from_shortcuts(
+        "Keyboard shortcuts",
+        get_shortcut_sections(TabId::Dashboard),
+    );
     modal.scroll = scroll;
     modal.key_width = 14;
     modal.render(frame, frame.area(), app_theme());
