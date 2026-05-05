@@ -123,6 +123,7 @@ impl AppState {
         storage_warning: Option<String>,
     ) -> Vec<AppCommand> {
         self.storage_warning = storage_warning.clone();
+        self.saved_config = saved_config.clone();
 
         if self.demo_mode {
             let mut main = MainState::default();
@@ -143,18 +144,10 @@ impl AppState {
             return Vec::new();
         }
 
-        if let (Some(config), Some(password)) = (saved_config.clone(), password) {
-            let runtime = RuntimeConfig {
-                base_url: config.base_url.clone(),
-                username: config.username.clone(),
-                service: config.service.clone(),
-                password,
-            };
-            self.saved_config = Some(config);
-            return vec![AppCommand::ValidateLogin(runtime)];
-        }
+        self.saved_password = password;
 
         let mut login = LoginState::default();
+        login.password.mask = true;
         if let Some(config) = saved_config {
             login.base_url.set(&config.base_url);
             login.username.set(&config.username);
@@ -172,9 +165,15 @@ impl AppState {
         match result {
             Ok(config) => {
                 let saved = config.saved();
-                let _ = storage::config::save_config(&saved);
-                let _ = storage::secret::save_password(&saved, &config.password);
+                let mut save_warnings = Vec::new();
+                if let Err(error) = storage::config::save_config(&saved) {
+                    save_warnings.push(format!("profile settings could not be saved: {error}"));
+                }
+                if let Err(error) = storage::secret::save_password(&saved, &config.password) {
+                    save_warnings.push(format!("password could not be saved securely: {error}"));
+                }
                 self.saved_config = Some(saved);
+                self.saved_password = Some(config.password.clone());
                 let mut main = MainState::default();
                 main.config = Some(config.clone());
                 main.dashboard.loading = true;
@@ -184,7 +183,14 @@ impl AppState {
                     main.dashboard.from_cache = true;
                 }
                 self.screen = Screen::MainShell(main);
-                vec![AppCommand::LoadDashboard(config)]
+                let mut commands = vec![AppCommand::LoadDashboard(config)];
+                if !save_warnings.is_empty() {
+                    commands.push(AppCommand::ShowToast(format!(
+                        "Login succeeded, but {}",
+                        save_warnings.join("; ")
+                    )));
+                }
+                commands
             }
             Err(error) => {
                 if let Screen::Login(login) = &mut self.screen {
@@ -192,6 +198,7 @@ impl AppState {
                     login.error = Some(error);
                 } else {
                     let mut login = LoginState::default();
+                    login.password.mask = true;
                     if let Some(config) = &self.saved_config {
                         login.base_url.set(&config.base_url);
                         login.username.set(&config.username);

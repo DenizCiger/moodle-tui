@@ -332,17 +332,18 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                 }
             });
         }
-        AppCommand::Logout => {
+        AppCommand::Logout {
+            saved_config,
+            password,
+            storage_warning,
+        } => {
             tokio::spawn(async move {
-                if let Some(saved) = storage::config::load_config() {
-                    let _ = storage::secret::clear_password(&saved);
-                }
-                let _ = storage::config::clear_config();
+                let saved_config = saved_config.or_else(storage::config::load_config);
                 let _ = storage::cache::clear_cache();
                 let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::BootstrapLoaded {
-                    saved_config: None,
-                    password: None,
-                    storage_warning: None,
+                    saved_config,
+                    password,
+                    storage_warning,
                 }));
             });
         }

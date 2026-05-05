@@ -1,4 +1,5 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
+use tui_components::shortcuts::{char_key, plain_char, shifted_char};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabId {
@@ -16,20 +17,6 @@ pub struct ShortcutDisplay {
 pub struct ShortcutSection {
     pub title: &'static str,
     pub items: Vec<ShortcutDisplay>,
-}
-
-fn char_key(key: KeyEvent, expected: char) -> bool {
-    matches!(key.code, KeyCode::Char(value) if value == expected)
-}
-
-fn plain_char(key: KeyEvent, expected: char) -> bool {
-    char_key(key, expected)
-        && !key.modifiers.contains(KeyModifiers::CONTROL)
-        && !key.modifiers.contains(KeyModifiers::ALT)
-}
-
-fn shifted_char(key: KeyEvent, expected: char) -> bool {
-    char_key(key, expected) && key.modifiers.contains(KeyModifiers::SHIFT)
 }
 
 pub fn is_shortcut_pressed(id: &str, key: KeyEvent) -> bool {
@@ -74,7 +61,7 @@ fn pick(ids: &[&'static str]) -> Vec<ShortcutDisplay> {
             "settings-open" => d(id, "?", "Open settings/help"),
             "settings-close" => d(id, "Esc or ?", "Close settings/help"),
             "quit" => d(id, "q", "Quit app"),
-            "logout" => d(id, "l", "Logout and clear saved credentials"),
+            "logout" => d(id, "l", "Logout"),
             "dashboard-refresh" => d(id, "r", "Refresh dashboard or active course page"),
             "dashboard-open-finder" => d(id, "/", "Open course finder"),
             "dashboard-open-content-finder" => d(id, "f", "Open course content finder"),

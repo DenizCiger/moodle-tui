@@ -9,6 +9,7 @@ use crate::ui::course_tree::{
 use crate::models::RuntimeConfig;
 use crate::shortcuts::is_shortcut_pressed;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use tui_components::input::login::{handle_login_key as handle_shared_login_key, LoginKeyBindings, LoginKeyOutcome};
 
 impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -34,56 +35,94 @@ fn handle_login_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
         return Vec::new();
     }
 
-    match key.code {
-        KeyCode::Tab => {
-            login.focus = login.focus.next();
-            return Vec::new();
+    let outcome = match login.focus {
+        LoginFocus::BaseUrl => handle_shared_login_key(
+            key,
+            &mut login.focus,
+            LoginFocus::Password,
+            LoginFocus::Submit,
+            Some(&mut login.base_url),
+            LoginFocus::next,
+            LoginFocus::prev,
+            LoginKeyBindings::default(),
+        ),
+        LoginFocus::Username => handle_shared_login_key(
+            key,
+            &mut login.focus,
+            LoginFocus::Password,
+            LoginFocus::Submit,
+            Some(&mut login.username),
+            LoginFocus::next,
+            LoginFocus::prev,
+            LoginKeyBindings::default(),
+        ),
+        LoginFocus::Password => handle_shared_login_key(
+            key,
+            &mut login.focus,
+            LoginFocus::Password,
+            LoginFocus::Submit,
+            Some(&mut login.password),
+            LoginFocus::next,
+            LoginFocus::prev,
+            LoginKeyBindings::default(),
+        ),
+        LoginFocus::Service => handle_shared_login_key(
+            key,
+            &mut login.focus,
+            LoginFocus::Password,
+            LoginFocus::Submit,
+            Some(&mut login.service),
+            LoginFocus::next,
+            LoginFocus::prev,
+            LoginKeyBindings::default(),
+        ),
+        LoginFocus::Submit => handle_shared_login_key(
+            key,
+            &mut login.focus,
+            LoginFocus::Password,
+            LoginFocus::Submit,
+            None,
+            LoginFocus::next,
+            LoginFocus::prev,
+            LoginKeyBindings::default(),
+        ),
+    };
+
+    match outcome {
+        LoginKeyOutcome::Submit => {
+            let config = RuntimeConfig {
+                base_url: login.base_url.value.clone(),
+                username: login.username.value.clone(),
+                service: login.service.value.clone(),
+                password: login.password.value.clone(),
+            };
+            login.busy = true;
+            login.error = None;
+            vec![AppCommand::ValidateLogin(config)]
         }
-        KeyCode::BackTab => {
-            login.focus = login.focus.prev();
-            return Vec::new();
-        }
-        KeyCode::Enter => {
-            if login.focus == LoginFocus::Submit
-                || login.focus == LoginFocus::Service
-                || login.focus == LoginFocus::Password
-            {
+        LoginKeyOutcome::SavedLogin => {
+            if let (Some(saved), Some(password)) = (state.saved_config.clone(), state.saved_password.clone()) {
                 let config = RuntimeConfig {
-                    base_url: login.base_url.value.clone(),
-                    username: login.username.value.clone(),
-                    service: login.service.value.clone(),
-                    password: login.password.value.clone(),
+                    base_url: saved.base_url,
+                    username: saved.username,
+                    service: saved.service,
+                    password,
                 };
                 login.busy = true;
                 login.error = None;
-                return vec![AppCommand::ValidateLogin(config)];
+                vec![AppCommand::ValidateLogin(config)]
+            } else {
+                Vec::new()
             }
-            login.focus = login.focus.next();
-            return Vec::new();
         }
-        KeyCode::Esc => return vec![AppCommand::Quit],
-        _ => {}
+        LoginKeyOutcome::TogglePassword => {
+            login.show_password = !login.show_password;
+            login.password.mask = !login.show_password;
+            Vec::new()
+        }
+        LoginKeyOutcome::Quit => vec![AppCommand::Quit],
+        _ => Vec::new(),
     }
-
-    let target = match login.focus {
-        LoginFocus::BaseUrl => &mut login.base_url,
-        LoginFocus::Username => &mut login.username,
-        LoginFocus::Password => &mut login.password,
-        LoginFocus::Service => &mut login.service,
-        LoginFocus::Submit => return Vec::new(),
-    };
-
-    match key.code {
-        KeyCode::Char(ch) => target.insert(ch),
-        KeyCode::Backspace => target.backspace(),
-        KeyCode::Delete => target.delete(),
-        KeyCode::Left => target.move_left(),
-        KeyCode::Right => target.move_right(),
-        KeyCode::Home => target.move_home(),
-        KeyCode::End => target.move_end(),
-        _ => {}
-    }
-    Vec::new()
 }
 
 fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
@@ -149,7 +188,14 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
         return Vec::new();
     }
     if is_shortcut_pressed("logout", key) {
-        return vec![AppCommand::Logout];
+        let saved_config = main.config.as_ref().map(|config| config.saved());
+        let password = main.config.as_ref().map(|config| config.password.clone());
+        let storage_warning = state.storage_warning.clone();
+        return vec![AppCommand::Logout {
+            saved_config,
+            password,
+            storage_warning,
+        }];
     }
     if is_shortcut_pressed("dashboard-refresh", key) {
         if let Some(config) = main.config.clone() {

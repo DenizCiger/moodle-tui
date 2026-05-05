@@ -14,6 +14,7 @@ pub struct LoginState {
     pub busy: bool,
     pub error: Option<String>,
     pub storage_warning: Option<String>,
+    pub show_password: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -151,6 +152,7 @@ pub struct AppState {
     pub demo_mode: bool,
     pub terminal_size: (u16, u16),
     pub saved_config: Option<SavedConfig>,
+    pub saved_password: Option<String>,
     pub storage_warning: Option<String>,
 }
 
@@ -161,6 +163,7 @@ impl AppState {
             demo_mode: false,
             terminal_size: (80, 24),
             saved_config: None,
+            saved_password: None,
             storage_warning: None,
         }
     }
@@ -203,7 +206,11 @@ pub enum AppCommand {
         course_id: i64,
         action: LinkAction,
     },
-    Logout,
+    Logout {
+        saved_config: Option<SavedConfig>,
+        password: Option<String>,
+        storage_warning: Option<String>,
+    },
     ScheduleToastExpire(u64),
     Quit,
 }
