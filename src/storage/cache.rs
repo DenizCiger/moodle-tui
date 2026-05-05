@@ -1,9 +1,9 @@
 use crate::models::{Course, CourseSection, UpcomingAssignment};
 use crate::storage::{StorageError, config_dir};
 use serde_json::{Value, json};
-use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use tui_components::storage::json::{named_file, read_json_or_default, write_json_pretty};
+use tui_components::storage::time::{is_expired as timestamp_is_expired, now_ms};
 
 const CACHE_TTL_MS: u64 = 1000 * 60 * 60 * 24 * 21;
 const MAX_CACHED_COURSE_PAGES: usize = 48;
@@ -15,36 +15,22 @@ pub struct DashboardCacheData {
 }
 
 pub fn cache_file() -> Result<PathBuf, StorageError> {
-    Ok(config_dir()?.join("cache.json"))
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
+    Ok(named_file(config_dir()?, "cache.json"))
 }
 
 fn is_expired(timestamp: u64) -> bool {
-    now_ms().saturating_sub(timestamp) > CACHE_TTL_MS
+    timestamp_is_expired(timestamp, CACHE_TTL_MS)
 }
 
 fn read_cache_value() -> Value {
-    let path = match cache_file() {
-        Ok(path) => path,
-        Err(_) => return Value::Object(Default::default()),
-    };
-    match fs::read_to_string(path) {
-        Ok(raw) => serde_json::from_str(&raw).unwrap_or_else(|_| Value::Object(Default::default())),
-        Err(_) => Value::Object(Default::default()),
-    }
+    cache_file()
+        .map(read_json_or_default)
+        .unwrap_or_else(|_| Value::Object(Default::default()))
 }
 
 fn write_cache_value(value: &Value) -> Result<(), StorageError> {
-    fs::create_dir_all(config_dir()?)?;
     let pruned = prune_course_pages(value.clone());
-    fs::write(cache_file()?, serde_json::to_vec_pretty(&pruned)?)?;
-    Ok(())
+    write_json_pretty(cache_file()?, &pruned)
 }
 
 fn prune_course_pages(mut value: Value) -> Value {
@@ -222,9 +208,7 @@ pub fn clear_cache() -> Result<(), StorageError> {
         },
         "coursePages": {},
     });
-    fs::create_dir_all(config_dir()?)?;
-    fs::write(cache_file()?, serde_json::to_vec_pretty(&payload)?)?;
-    Ok(())
+    write_json_pretty(cache_file()?, &payload)
 }
 
 #[cfg(test)]

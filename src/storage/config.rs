@@ -1,17 +1,15 @@
 use crate::models::{DEFAULT_MOODLE_SERVICE, SavedConfig, normalize_base_url};
 use crate::storage::{StorageError, config_dir};
 use serde_json::Value;
-use std::fs;
 use std::path::PathBuf;
+use tui_components::storage::json::{clear_json_object, named_file, read_json, write_json_pretty};
 
 pub fn config_file() -> Result<PathBuf, StorageError> {
-    Ok(config_dir()?.join("config.json"))
+    Ok(named_file(config_dir()?, "config.json"))
 }
 
 pub fn load_config() -> Option<SavedConfig> {
-    let path = config_file().ok()?;
-    let raw = fs::read_to_string(path).ok()?;
-    let parsed = serde_json::from_str::<Value>(&raw).ok()?;
+    let parsed: Value = read_json(config_file().ok()?)?;
     let object = parsed.as_object()?;
 
     let base_url = object.get("baseUrl").and_then(Value::as_str)?;
@@ -41,14 +39,12 @@ pub fn load_config() -> Option<SavedConfig> {
 }
 
 pub fn save_config(config: &SavedConfig) -> Result<(), StorageError> {
-    fs::create_dir_all(config_dir()?)?;
-    fs::write(config_file()?, serde_json::to_vec_pretty(config)?)?;
-    Ok(())
+    write_json_pretty(config_file()?, config)
 }
 
 pub fn clear_config() -> Result<(), StorageError> {
     if let Ok(path) = config_file() {
-        let _ = fs::write(path, b"{}");
+        let _ = clear_json_object(path);
     }
     Ok(())
 }
