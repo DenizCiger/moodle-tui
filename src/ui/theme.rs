@@ -1,6 +1,6 @@
 use ratatui::style::Color;
 
-pub const BRAND: Color = Color::Indexed(39);
+pub const BRAND: Color = Color::Indexed(45);
 pub const WARNING: Color = Color::Indexed(220);
 pub const ERROR: Color = Color::Indexed(196);
 pub const SUCCESS: Color = Color::Indexed(84);
