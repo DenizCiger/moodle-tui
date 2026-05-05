@@ -1,13 +1,13 @@
 use crate::app::state::AppState;
 use crate::app::state::types::{CourseView, MainState};
-use crate::ui::shared::centered_rect;
 use crate::ui::{assignment_modal, course_tree, dashboard, settings, theme};
 use chrono::TimeZone;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::Paragraph;
+use tui_components::ui::search::{SearchModal, SearchModalCategory, SearchModalRow};
 
 pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     let area = frame.area();
@@ -91,100 +91,41 @@ fn render_footer(frame: &mut Frame, area: ratatui::layout::Rect, main: &MainStat
 fn render_finder(frame: &mut Frame, main: &MainState) {
     use crate::search::courses::filter_courses;
 
-    let outer = frame.area();
-    let area = centered_rect(
-        (outer.width as f32 * 0.7) as u16,
-        (outer.height as f32 * 0.6) as u16,
-        outer,
-    );
-    frame.render_widget(Clear, area);
-    let title = if main.course_finder_open {
-        " Course finder "
-    } else {
-        " Content finder "
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .border_style(Style::default().fg(theme::BRAND));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let hint = if main.course_finder_open {
-        "↑/↓ select · Enter open · Esc cancel"
-    } else {
-        "↑/↓ select · ←/→ change target · Enter jump · Esc cancel"
-    };
-    let mut lines: Vec<Line> = vec![
-        Line::from(format!("> {}", main.finder_query.value)),
-        Line::from(Span::styled(hint, Style::default().fg(theme::NEUTRAL_GRAY))),
-        Line::from(""),
-    ];
-
     if main.course_finder_open {
-        let filtered = filter_courses(&main.dashboard.courses, &main.finder_query.value);
-        let row_capacity = inner.height.saturating_sub(lines.len() as u16) as usize;
-        let selected = main
-            .finder_selected
-            .min(filtered.len().saturating_sub(1));
-        let visible_start = selected.saturating_sub(row_capacity.saturating_sub(1));
-        if filtered.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "No matches",
-                Style::default().fg(theme::NEUTRAL_GRAY),
-            )));
-        } else {
-            for (local, course) in filtered.iter().skip(visible_start).take(row_capacity).enumerate() {
-                let idx = visible_start + local;
-                let is_selected = idx == selected;
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        if is_selected { "> " } else { "  " },
-                        Style::default().fg(if is_selected { theme::BRAND } else { theme::NEUTRAL_GRAY }),
-                    ),
+        let filtered = filter_courses(&main.dashboard.courses, &main.finder.input.value);
+        let rows: Vec<SearchModalRow> = filtered
+            .iter()
+            .map(|course| {
+                SearchModalRow::new(vec![
                     Span::styled(
                         format!("{:<10}", course.shortname),
                         Style::default().fg(theme::BRAND).add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(" "),
                     Span::raw(course.fullname.clone()),
-                ]));
-            }
+                ])
+            })
+            .collect();
+        SearchModal {
+            title: " Course finder ",
+            hint: "↑/↓ select · Enter open · Esc cancel",
+            state: &main.finder,
+            rows,
+            categories: None,
+            empty_text: "No matches",
+            theme: theme::components_theme(),
         }
-    } else if let CourseView::Course(course) = &main.view {
+        .render(frame);
+        return;
+    }
+
+    if let CourseView::Course(course) = &main.view {
         let tree_rows = course_tree::build_course_tree_rows(&course.sections, &course.collapsed);
         let targets = crate::ui::content_finder::build_targets(&tree_rows);
         let target_idx = main.finder_target_idx.min(targets.len() - 1);
         let target = &targets[target_idx];
-        let max_w = inner.width as usize;
-        let mut row_spans: Vec<Span> = Vec::new();
-        let mut row_w = 0usize;
-        let mut ribbon_lines: Vec<Line> = Vec::new();
-        for (i, t) in targets.iter().enumerate() {
-            let active = i == target_idx;
-            let style = if active {
-                Style::default().fg(theme::NEUTRAL_BLACK).bg(theme::BRAND).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(theme::NEUTRAL_GRAY)
-            };
-            let chunk = format!(" {} ", t.label);
-            let w = chunk.chars().count() + 1;
-            if row_w + w > max_w && !row_spans.is_empty() {
-                ribbon_lines.push(Line::from(std::mem::take(&mut row_spans)));
-                row_w = 0;
-            }
-            row_spans.push(Span::styled(chunk, style));
-            row_spans.push(Span::raw(" "));
-            row_w += w;
-        }
-        if !row_spans.is_empty() {
-            ribbon_lines.push(Line::from(row_spans));
-        }
-        for (offset, line) in ribbon_lines.into_iter().enumerate() {
-            lines.insert(1 + offset, line);
-        }
         let candidate_rows = crate::ui::content_finder::filter_by_target(&tree_rows, target);
-        let query = main.finder_query.value.to_lowercase();
+        let query = main.finder.input.value.to_lowercase();
         let filtered: Vec<&course_tree::CourseTreeRow> = if query.trim().is_empty() {
             candidate_rows
         } else {
@@ -193,38 +134,45 @@ fn render_finder(frame: &mut Frame, main: &MainState) {
                 .filter(|r| r.text.to_lowercase().contains(&query))
                 .collect()
         };
-        let row_capacity = inner.height.saturating_sub(lines.len() as u16) as usize;
-        let selected = main
-            .finder_selected
-            .min(filtered.len().saturating_sub(1));
-        let visible_start = selected.saturating_sub(row_capacity.saturating_sub(1));
-        if filtered.is_empty() {
-            lines.push(Line::from(Span::styled(
-                "No matches",
-                Style::default().fg(theme::NEUTRAL_GRAY),
-            )));
-        } else {
-            for (local, row) in filtered.iter().skip(visible_start).take(row_capacity).enumerate() {
-                let idx = visible_start + local;
-                let is_selected = idx == selected;
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        if is_selected { "> " } else { "  " },
-                        Style::default().fg(if is_selected { theme::BRAND } else { theme::NEUTRAL_GRAY }),
-                    ),
+        let categories: Vec<SearchModalCategory> = targets
+            .iter()
+            .enumerate()
+            .map(|(i, t)| SearchModalCategory {
+                label: t.label.as_str(),
+                active: i == target_idx,
+            })
+            .collect();
+        let rows: Vec<SearchModalRow> = filtered
+            .iter()
+            .map(|row| {
+                SearchModalRow::new(vec![
                     Span::raw(format!("{} ", row.icon)),
                     Span::raw(row.text.clone()),
-                ]));
-            }
+                ])
+            })
+            .collect();
+        SearchModal {
+            title: " Content finder ",
+            hint: "↑/↓ select · ←/→ change target · Enter jump · Esc cancel",
+            state: &main.finder,
+            rows,
+            categories: Some(categories),
+            empty_text: "No matches",
+            theme: theme::components_theme(),
         }
+        .render(frame);
     } else {
-        lines.push(Line::from(Span::styled(
-            "Content finder requires open course",
-            Style::default().fg(theme::NEUTRAL_GRAY),
-        )));
+        SearchModal {
+            title: " Content finder ",
+            hint: "↑/↓ select · ←/→ change target · Enter jump · Esc cancel",
+            state: &main.finder,
+            rows: Vec::new(),
+            categories: None,
+            empty_text: "Content finder requires open course",
+            theme: theme::components_theme(),
+        }
+        .render(frame);
     }
-
-    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_toast(frame: &mut Frame, message: &str) {

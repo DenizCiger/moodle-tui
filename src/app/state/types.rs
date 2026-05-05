@@ -1,4 +1,4 @@
-use crate::app::state::text_input::TextInputState;
+use crate::app::state::text_input::{SearchModalState, TextInputState};
 use crate::models::{
     AssignmentDetail, AssignmentSubmissionStatus, Course, CourseSection, RuntimeConfig,
     SavedConfig, UpcomingAssignment,
@@ -88,8 +88,7 @@ pub struct MainState {
     pub assignment_modal: Option<AssignmentModalData>,
     pub course_finder_open: bool,
     pub content_finder_open: bool,
-    pub finder_query: TextInputState,
-    pub finder_selected: usize,
+    pub finder: SearchModalState,
     pub finder_target_idx: usize,
     pub toast: Option<String>,
     pub toast_id: u64,

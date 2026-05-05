@@ -8,7 +8,7 @@ use crate::ui::course_tree::{
 };
 use crate::models::RuntimeConfig;
 use crate::shortcuts::is_shortcut_pressed;
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use crossterm::event::{KeyEvent, MouseEvent};
 use tui_components::input::login::{handle_login_key as handle_shared_login_key, LoginKeyBindings, LoginKeyOutcome};
 
 impl AppState {
@@ -209,16 +209,14 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
     }
     if is_shortcut_pressed("dashboard-open-finder", key) {
         main.course_finder_open = true;
-        main.finder_query = Default::default();
-        main.finder_selected = 0;
+        main.finder.reset();
         return Vec::new();
     }
     if is_shortcut_pressed("dashboard-open-content-finder", key)
         && matches!(main.view, CourseView::Course(_))
     {
         main.content_finder_open = true;
-        main.finder_query = Default::default();
-        main.finder_selected = 0;
+        main.finder.reset();
         main.finder_target_idx = 0;
         return Vec::new();
     }
@@ -589,72 +587,9 @@ fn handle_assignment_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCo
 }
 
 fn handle_finder_key(main: &mut MainState, key: KeyEvent, is_course_finder: bool) -> Vec<AppCommand> {
+    use crate::app::state::text_input::{SearchKeyOutcome, SearchMode};
     use crate::search::courses::filter_courses;
 
-    let cancel_id = if is_course_finder {
-        "course-finder-cancel"
-    } else {
-        "course-content-finder-cancel"
-    };
-    let submit_id = if is_course_finder {
-        "course-finder-submit"
-    } else {
-        "course-content-finder-submit"
-    };
-    if is_shortcut_pressed(cancel_id, key) {
-        if is_course_finder {
-            main.course_finder_open = false;
-        } else {
-            main.content_finder_open = false;
-        }
-        return Vec::new();
-    }
-    if is_shortcut_pressed(submit_id, key) && is_course_finder {
-        let filtered = filter_courses(&main.dashboard.courses, &main.finder_query.value);
-        if let Some(course) = filtered.get(main.finder_selected).copied() {
-            main.course_finder_open = false;
-            let course_id = course.id;
-            main.view = CourseView::Course(crate::app::state::types::CoursePageData {
-                course_id,
-                course_short_name: course.shortname.clone(),
-                course_full_name: course.fullname.clone(),
-                loading: true,
-                ..Default::default()
-            });
-            main.selected_row = 0;
-            if let Some(config) = main.config.clone() {
-                return vec![AppCommand::LoadCoursePage(config, course_id)];
-            }
-        }
-        return Vec::new();
-    }
-    if is_shortcut_pressed(submit_id, key) && !is_course_finder {
-        if let CourseView::Course(course) = &main.view {
-            let rows = build_course_tree_rows(&course.sections, &course.collapsed);
-            let targets = crate::ui::content_finder::build_targets(&rows);
-            let target = &targets[main.finder_target_idx.min(targets.len() - 1)];
-            let by_target = crate::ui::content_finder::filter_by_target(&rows, target);
-            let q = main.finder_query.value.to_lowercase();
-            let filtered: Vec<&CourseTreeRow> = if q.trim().is_empty() {
-                by_target
-            } else {
-                by_target
-                    .into_iter()
-                    .filter(|r| r.text.to_lowercase().contains(&q))
-                    .collect()
-            };
-            if let Some(picked) = filtered.get(main.finder_selected) {
-                let picked_id = picked.id.clone();
-                main.content_finder_open = false;
-                if let Some(idx) = rows.iter().position(|r| r.id == picked_id) {
-                    if let CourseView::Course(course_mut) = &mut main.view {
-                        course_mut.selected_row = idx;
-                    }
-                }
-            }
-        }
-        return Vec::new();
-    }
     if !is_course_finder
         && (is_shortcut_pressed("course-content-finder-target-prev", key)
             || is_shortcut_pressed("course-content-finder-target-next", key))
@@ -666,48 +601,83 @@ fn handle_finder_key(main: &mut MainState, key: KeyEvent, is_course_finder: bool
                 if is_shortcut_pressed("course-content-finder-target-prev", key) { -1 } else { 1 };
             main.finder_target_idx =
                 crate::ui::content_finder::cycle(main.finder_target_idx, delta, targets.len());
-            main.finder_selected = 0;
+            main.finder.selected = 0;
         }
         return Vec::new();
     }
 
-    match key.code {
-        KeyCode::Up => {
-            main.finder_selected = main.finder_selected.saturating_sub(1);
-            return Vec::new();
+    let max = current_finder_max(main, is_course_finder);
+    match main.finder.handle_key(key, max, SearchMode::Live) {
+        SearchKeyOutcome::Cancel => {
+            if is_course_finder {
+                main.course_finder_open = false;
+            } else {
+                main.content_finder_open = false;
+            }
         }
-        KeyCode::Down => {
-            let max = if is_course_finder {
-                filter_courses(&main.dashboard.courses, &main.finder_query.value).len()
+        SearchKeyOutcome::Submit => {
+            if is_course_finder {
+                let filtered = filter_courses(&main.dashboard.courses, &main.finder.input.value);
+                if let Some(course) = filtered.get(main.finder.selected).copied() {
+                    main.course_finder_open = false;
+                    let course_id = course.id;
+                    main.view = CourseView::Course(crate::app::state::types::CoursePageData {
+                        course_id,
+                        course_short_name: course.shortname.clone(),
+                        course_full_name: course.fullname.clone(),
+                        loading: true,
+                        ..Default::default()
+                    });
+                    main.selected_row = 0;
+                    if let Some(config) = main.config.clone() {
+                        return vec![AppCommand::LoadCoursePage(config, course_id)];
+                    }
+                }
             } else if let CourseView::Course(course) = &main.view {
                 let rows = build_course_tree_rows(&course.sections, &course.collapsed);
                 let targets = crate::ui::content_finder::build_targets(&rows);
                 let target = &targets[main.finder_target_idx.min(targets.len() - 1)];
                 let by_target = crate::ui::content_finder::filter_by_target(&rows, target);
-                let q = main.finder_query.value.to_lowercase();
-                by_target
-                    .into_iter()
-                    .filter(|r| q.trim().is_empty() || r.text.to_lowercase().contains(&q))
-                    .count()
-            } else {
-                0
-            };
-            if main.finder_selected + 1 < max {
-                main.finder_selected += 1;
+                let q = main.finder.input.value.to_lowercase();
+                let filtered: Vec<&CourseTreeRow> = if q.trim().is_empty() {
+                    by_target
+                } else {
+                    by_target
+                        .into_iter()
+                        .filter(|r| r.text.to_lowercase().contains(&q))
+                        .collect()
+                };
+                if let Some(picked) = filtered.get(main.finder.selected) {
+                    let picked_id = picked.id.clone();
+                    main.content_finder_open = false;
+                    if let Some(idx) = rows.iter().position(|r| r.id == picked_id) {
+                        if let CourseView::Course(course_mut) = &mut main.view {
+                            course_mut.selected_row = idx;
+                        }
+                    }
+                }
             }
-            return Vec::new();
         }
-        KeyCode::Char(ch) => {
-            main.finder_query.insert(ch);
-            main.finder_selected = 0;
-        }
-        KeyCode::Backspace => {
-            main.finder_query.backspace();
-            main.finder_selected = 0;
-        }
-        KeyCode::Left => main.finder_query.move_left(),
-        KeyCode::Right => main.finder_query.move_right(),
         _ => {}
     }
     Vec::new()
+}
+
+fn current_finder_max(main: &MainState, is_course_finder: bool) -> usize {
+    use crate::search::courses::filter_courses;
+    if is_course_finder {
+        filter_courses(&main.dashboard.courses, &main.finder.input.value).len()
+    } else if let CourseView::Course(course) = &main.view {
+        let rows = build_course_tree_rows(&course.sections, &course.collapsed);
+        let targets = crate::ui::content_finder::build_targets(&rows);
+        let target = &targets[main.finder_target_idx.min(targets.len() - 1)];
+        let by_target = crate::ui::content_finder::filter_by_target(&rows, target);
+        let q = main.finder.input.value.to_lowercase();
+        by_target
+            .into_iter()
+            .filter(|r| q.trim().is_empty() || r.text.to_lowercase().contains(&q))
+            .count()
+    } else {
+        0
+    }
 }
