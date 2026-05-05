@@ -1,0 +1,33 @@
+{
+  "name": "moodle-tui",
+  "version": "0.1.0",
+  "description": "Terminal UI for Moodle, distributed as a prebuilt Rust binary.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DenizCiger/moodle-tui.git"
+  },
+  "homepage": "https://github.com/DenizCiger/moodle-tui#readme",
+  "bugs": {
+    "url": "https://github.com/DenizCiger/moodle-tui/issues"
+  },
+  "bin": {
+    "moodle": "bin/moodle.js"
+  },
+  "files": [
+    "bin",
+    "scripts"
+  ],
+  "keywords": [
+    "tui",
+    "moodle",
+    "rust",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  }
+}
