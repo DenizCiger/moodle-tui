@@ -618,7 +618,7 @@ fn handle_finder_key(main: &mut MainState, key: KeyEvent, is_course_finder: bool
         SearchKeyOutcome::Submit => {
             if is_course_finder {
                 let filtered = filter_courses(&main.dashboard.courses, &main.finder.input.value);
-                if let Some(course) = filtered.get(main.finder.selected).copied() {
+                if let Some(course) = filtered.get(main.finder.selected).map(|(c, _)| *c) {
                     main.course_finder_open = false;
                     let course_id = course.id;
                     main.view = CourseView::Course(crate::app::state::types::CoursePageData {

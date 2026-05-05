@@ -7,7 +7,7 @@ use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use tui_components::ui::search::{SearchModal, SearchModalCategory, SearchModalRow};
+use tui_components::ui::search::{SearchModal, SearchModalCategory, SearchModalRow, highlight_spans};
 
 pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     let area = frame.area();
@@ -88,22 +88,47 @@ fn render_footer(frame: &mut Frame, area: ratatui::layout::Rect, main: &MainStat
     frame.render_widget(Paragraph::new(line), area);
 }
 
+fn substring_match_indices(haystack: &str, query_lower: &str) -> Vec<usize> {
+    if query_lower.is_empty() {
+        return Vec::new();
+    }
+    let hay_lower = haystack.to_lowercase();
+    let Some(byte_start) = hay_lower.find(query_lower) else {
+        return Vec::new();
+    };
+    let char_start = hay_lower[..byte_start].chars().count();
+    let q_len = query_lower.chars().count();
+    (char_start..char_start + q_len).collect()
+}
+
 fn render_finder(frame: &mut Frame, main: &MainState) {
     use crate::search::courses::filter_courses;
 
     if main.course_finder_open {
+        use crate::search::courses::CourseField;
         let filtered = filter_courses(&main.dashboard.courses, &main.finder.input.value);
+        let shortname_base = Style::default().fg(theme::BRAND).add_modifier(Modifier::BOLD);
+        let highlight_style = Style::default()
+            .fg(theme::WARNING)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
         let rows: Vec<SearchModalRow> = filtered
             .iter()
-            .map(|course| {
-                SearchModalRow::new(vec![
-                    Span::styled(
-                        format!("{:<10}", course.shortname),
-                        Style::default().fg(theme::BRAND).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(" "),
-                    Span::raw(course.fullname.clone()),
-                ])
+            .map(|(course, hi)| {
+                let padded_shortname = format!("{:<10}", course.shortname);
+                let shortname_spans = if matches!(hi.field, Some(CourseField::Shortname)) {
+                    highlight_spans(&padded_shortname, &hi.indices, shortname_base, highlight_style)
+                } else {
+                    vec![Span::styled(padded_shortname, shortname_base)]
+                };
+                let fullname_spans = if matches!(hi.field, Some(CourseField::Fullname)) {
+                    highlight_spans(&course.fullname, &hi.indices, Style::default(), highlight_style)
+                } else {
+                    vec![Span::raw(course.fullname.clone())]
+                };
+                let mut spans = shortname_spans;
+                spans.push(Span::raw(" "));
+                spans.extend(fullname_spans);
+                SearchModalRow::new(spans)
             })
             .collect();
         SearchModal {
@@ -142,13 +167,21 @@ fn render_finder(frame: &mut Frame, main: &MainState) {
                 active: i == target_idx,
             })
             .collect();
+        let highlight_style = Style::default()
+            .fg(theme::WARNING)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
         let rows: Vec<SearchModalRow> = filtered
             .iter()
             .map(|row| {
-                SearchModalRow::new(vec![
-                    Span::raw(format!("{} ", row.icon)),
-                    Span::raw(row.text.clone()),
-                ])
+                let indices = substring_match_indices(&row.text, &query);
+                let text_spans = if indices.is_empty() {
+                    vec![Span::raw(row.text.clone())]
+                } else {
+                    highlight_spans(&row.text, &indices, Style::default(), highlight_style)
+                };
+                let mut spans = vec![Span::raw(format!("{} ", row.icon))];
+                spans.extend(text_spans);
+                SearchModalRow::new(spans)
             })
             .collect();
         SearchModal {
