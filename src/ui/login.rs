@@ -3,7 +3,6 @@ use crate::app::state::types::{LoginFocus, LoginState};
 use crate::ui::theme;
 use ratatui::Frame;
 use tui_components::ui::login::{LoginFieldView, LoginModal};
-use tui_components::ui::theme::Theme;
 
 pub fn render(frame: &mut Frame, login: &LoginState, state: &AppState) {
     LoginModal {
@@ -55,21 +54,5 @@ Alt+V show password · Ctrl+L saved login · Esc quit",
         width: 72,
         min_height: 18,
     }
-    .render(frame, frame.area(), app_theme());
-}
-
-fn app_theme() -> Theme {
-    Theme {
-        brand: theme::BRAND,
-        warning: theme::WARNING,
-        error: theme::ERROR,
-        success: theme::SUCCESS,
-        neutral_white: theme::NEUTRAL_WHITE,
-        neutral_black: theme::NEUTRAL_BLACK,
-        neutral_gray: theme::NEUTRAL_GRAY,
-        neutral_bright_black: theme::NEUTRAL_BRIGHT_BLACK,
-        panel_header: theme::PANEL_HEADER,
-        panel_selected: theme::PANEL_SELECTED,
-        panel_alternate: theme::PANEL_ALTERNATE,
-    }
+    .render(frame, frame.area(), theme::components_theme());
 }
