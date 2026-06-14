@@ -79,7 +79,9 @@ fn parse_upcoming(value: &Value) -> Vec<UpcomingAssignment> {
         .map(|items| {
             items
                 .iter()
-                .filter_map(|entry| serde_json::from_value::<UpcomingAssignment>(entry.clone()).ok())
+                .filter_map(|entry| {
+                    serde_json::from_value::<UpcomingAssignment>(entry.clone()).ok()
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -184,7 +186,11 @@ pub fn save_course_sections_to_cache(
         Some(Value::Object(map)) => map,
         _ => {
             cache["coursePages"] = Value::Object(Default::default());
-            cache.get_mut("coursePages").unwrap().as_object_mut().unwrap()
+            cache
+                .get_mut("coursePages")
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
         }
     };
     pages_obj.insert(
@@ -222,9 +228,13 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         let tempdir = tempfile::tempdir().unwrap();
         // SAFETY: tests serialised by ENV_LOCK
-        unsafe { std::env::set_var(crate::storage::CONFIG_DIR_ENV, tempdir.path()); }
+        unsafe {
+            std::env::set_var(crate::storage::CONFIG_DIR_ENV, tempdir.path());
+        }
         test();
-        unsafe { std::env::remove_var(crate::storage::CONFIG_DIR_ENV); }
+        unsafe {
+            std::env::remove_var(crate::storage::CONFIG_DIR_ENV);
+        }
     }
 
     #[test]

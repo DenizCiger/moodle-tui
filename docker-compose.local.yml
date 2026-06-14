@@ -1,0 +1,38 @@
+services:
+  mariadb:
+    image: bitnamilegacy/mariadb:11.4
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      MARIADB_USER: bn_moodle
+      MARIADB_DATABASE: bitnami_moodle
+      MARIADB_PASSWORD: bitnami
+    volumes:
+      - moodle_tui_mariadb:/bitnami/mariadb
+
+  moodle:
+    image: bitnamilegacy/moodle:4.5
+    depends_on:
+      - mariadb
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      MOODLE_DATABASE_HOST: mariadb
+      MOODLE_DATABASE_PORT_NUMBER: "3306"
+      MOODLE_DATABASE_USER: bn_moodle
+      MOODLE_DATABASE_NAME: bitnami_moodle
+      MOODLE_DATABASE_PASSWORD: bitnami
+      MOODLE_USERNAME: admin
+      MOODLE_PASSWORD: adminpass
+      MOODLE_EMAIL: admin@example.test
+      MOODLE_SITE_NAME: moodle-tui local
+    volumes:
+      - moodle_tui_data:/bitnami/moodle
+      - moodle_tui_moodledata:/bitnami/moodledata
+      - ./scripts:/scripts:ro
+
+volumes:
+  moodle_tui_mariadb:
+  moodle_tui_data:
+  moodle_tui_moodledata:

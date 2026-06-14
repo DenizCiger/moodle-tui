@@ -128,9 +128,17 @@ pub struct UpcomingAssignment {
     pub due_date: i64,
     #[serde(rename = "courseId")]
     pub course_id: i64,
-    #[serde(rename = "courseShortName", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "courseShortName",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub course_short_name: Option<String>,
-    #[serde(rename = "courseFullName", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "courseFullName",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub course_full_name: Option<String>,
 }
 
@@ -143,9 +151,17 @@ pub struct AssignmentDetail {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub intro: Option<String>,
-    #[serde(rename = "introFormat", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "introFormat",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub intro_format: Option<i64>,
-    #[serde(rename = "alwaysShowDescription", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "alwaysShowDescription",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub always_show_description: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub allowsubmissionsfromdate: Option<i64>,
@@ -169,9 +185,17 @@ pub struct AssignmentDetail {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct AssignmentSubmissionStatus {
-    #[serde(rename = "submissionStatus", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "submissionStatus",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub submission_status: Option<String>,
-    #[serde(rename = "gradingStatus", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "gradingStatus",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub grading_status: Option<String>,
     #[serde(rename = "canSubmit", skip_serializing_if = "Option::is_none", default)]
     pub can_submit: Option<bool>,
@@ -179,6 +203,93 @@ pub struct AssignmentSubmissionStatus {
     pub can_edit: Option<bool>,
     #[serde(rename = "isLocked", skip_serializing_if = "Option::is_none", default)]
     pub is_locked: Option<bool>,
-    #[serde(rename = "lastModified", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "lastModified",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub last_modified: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuizSummary {
+    pub id: i64,
+    #[serde(rename = "courseId")]
+    pub course_id: i64,
+    pub cmid: i64,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub intro: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub timeopen: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub timeclose: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub timelimit: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub attempts: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuizAttempt {
+    pub id: i64,
+    pub quiz: i64,
+    pub state: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub currentpage: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuizWarning {
+    pub item: Option<String>,
+    pub itemid: Option<i64>,
+    pub warningcode: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum QuizAnswerKind {
+    SingleChoice,
+    MultiChoice,
+    Text,
+    Hidden,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuizAnswerOption {
+    pub label: String,
+    pub value: String,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuizAnswerControl {
+    pub name: String,
+    pub kind: QuizAnswerKind,
+    #[serde(default)]
+    pub options: Vec<QuizAnswerOption>,
+    #[serde(default)]
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuizQuestion {
+    pub slot: i64,
+    pub number: Option<String>,
+    pub name: String,
+    pub text: String,
+    pub html: String,
+    #[serde(default)]
+    pub controls: Vec<QuizAnswerControl>,
+    pub unsupported: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuizAttemptData {
+    pub attempt: QuizAttempt,
+    #[serde(default)]
+    pub questions: Vec<QuizQuestion>,
+    #[serde(default)]
+    pub warnings: Vec<QuizWarning>,
 }

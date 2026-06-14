@@ -7,7 +7,10 @@ pub fn token_endpoint(base_url: &str) -> String {
 }
 
 pub fn rest_endpoint(base_url: &str) -> String {
-    format!("{}/webservice/rest/server.php", normalize_base_url(base_url))
+    format!(
+        "{}/webservice/rest/server.php",
+        normalize_base_url(base_url)
+    )
 }
 
 pub async fn post_form(

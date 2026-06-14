@@ -25,7 +25,10 @@ pub fn render(frame: &mut Frame, modal: &AssignmentModalData) {
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(vec![
         Span::styled("Course: ", Style::default().fg(theme::NEUTRAL_GRAY)),
-        Span::styled(modal.course_name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            modal.course_name.clone(),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
     ]));
     lines.push(Line::from(vec![
         Span::styled("Due:    ", Style::default().fg(theme::NEUTRAL_GRAY)),
@@ -100,7 +103,9 @@ pub fn render(frame: &mut Frame, modal: &AssignmentModalData) {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "Description",
-            Style::default().fg(theme::BRAND).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::BRAND)
+                .add_modifier(Modifier::BOLD),
         )));
         lines.push(Line::from(desc));
     }
@@ -125,7 +130,10 @@ pub fn render(frame: &mut Frame, modal: &AssignmentModalData) {
 fn badge(text: &str, bg: Color) -> Span<'static> {
     Span::styled(
         format!(" {text} "),
-        Style::default().bg(bg).fg(theme::NEUTRAL_BLACK).add_modifier(Modifier::BOLD),
+        Style::default()
+            .bg(bg)
+            .fg(theme::NEUTRAL_BLACK)
+            .add_modifier(Modifier::BOLD),
     )
 }
 

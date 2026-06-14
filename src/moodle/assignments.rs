@@ -1,4 +1,6 @@
-use crate::models::{AssignmentDetail, AssignmentSubmissionStatus, RuntimeConfig, UpcomingAssignment};
+use crate::models::{
+    AssignmentDetail, AssignmentSubmissionStatus, RuntimeConfig, UpcomingAssignment,
+};
 use crate::moodle::MoodleError;
 use crate::moodle::api::call_webservice;
 use crate::moodle::normalize::{

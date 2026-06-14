@@ -182,7 +182,11 @@ pub fn build_course_tree_rows(
                 depth: 1,
                 text: module.name.clone(),
                 link_url: module.url.clone().filter(|s| !s.is_empty()),
-                module_type: if modname.is_empty() { None } else { Some(modname.clone()) },
+                module_type: if modname.is_empty() {
+                    None
+                } else {
+                    Some(modname.clone())
+                },
                 icon: module_icon(module.modname.as_deref()),
                 collapsible: true,
                 expanded: !collapsed_module,
@@ -201,7 +205,11 @@ pub fn build_course_tree_rows(
                     depth: 2,
                     text: description,
                     link_url: None,
-                    module_type: if modname.is_empty() { None } else { Some(modname.clone()) },
+                    module_type: if modname.is_empty() {
+                        None
+                    } else {
+                        Some(modname.clone())
+                    },
                     icon: "·",
                     collapsible: false,
                     expanded: false,
@@ -216,7 +224,11 @@ pub fn build_course_tree_rows(
                     depth: 2,
                     text: url.to_owned(),
                     link_url: Some(url.to_owned()),
-                    module_type: if modname.is_empty() { None } else { Some(modname.clone()) },
+                    module_type: if modname.is_empty() {
+                        None
+                    } else {
+                        Some(modname.clone())
+                    },
                     icon: "🔗",
                     collapsible: false,
                     expanded: false,
@@ -225,7 +237,9 @@ pub fn build_course_tree_rows(
             }
 
             for (idx, content) in module.contents.iter().enumerate() {
-                rows.push(content_row(section.id, module.id, idx, content, &modname, &module_id));
+                rows.push(content_row(
+                    section.id, module.id, idx, content, &modname, &module_id,
+                ));
             }
         }
     }
@@ -262,7 +276,11 @@ fn content_row(
         depth: 2,
         text,
         link_url: url,
-        module_type: if modname.is_empty() { None } else { Some(modname.to_owned()) },
+        module_type: if modname.is_empty() {
+            None
+        } else {
+            Some(modname.to_owned())
+        },
         icon: content_icon(content.kind.as_deref()),
         collapsible: false,
         expanded: false,

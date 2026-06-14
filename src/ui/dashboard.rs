@@ -1,7 +1,5 @@
 use crate::app::state::types::{CoursePageData, DashboardPane, MainState};
-use crate::ui::course_tree::{
-    CourseTreeNodeKind, build_course_tree_rows, render_tree_prefix,
-};
+use crate::ui::course_tree::{CourseTreeNodeKind, build_course_tree_rows, render_tree_prefix};
 use crate::ui::shell::format_timestamp;
 use crate::ui::theme;
 use ratatui::Frame;
@@ -29,7 +27,11 @@ fn render_upcoming(frame: &mut Frame, area: Rect, main: &MainState) {
     }
 
     let focused = main.dashboard_focus == DashboardPane::Upcoming;
-    let border = if focused { theme::BRAND } else { theme::NEUTRAL_BRIGHT_BLACK };
+    let border = if focused {
+        theme::BRAND
+    } else {
+        theme::NEUTRAL_BRIGHT_BLACK
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" Upcoming{subtitle} "))
@@ -61,7 +63,9 @@ fn render_upcoming(frame: &mut Frame, area: Rect, main: &MainState) {
             .map(|(idx, assignment)| {
                 let selected = focused && idx == main.selected_row;
                 let style = if selected {
-                    Style::default().fg(theme::NEUTRAL_WHITE).bg(theme::PANEL_SELECTED)
+                    Style::default()
+                        .fg(theme::NEUTRAL_WHITE)
+                        .bg(theme::PANEL_SELECTED)
                 } else {
                     Style::default()
                 };
@@ -89,7 +93,11 @@ fn render_upcoming(frame: &mut Frame, area: Rect, main: &MainState) {
 
 fn render_courses(frame: &mut Frame, area: Rect, main: &MainState) {
     let focused = main.dashboard_focus == DashboardPane::Courses;
-    let border = if focused { theme::BRAND } else { theme::NEUTRAL_BRIGHT_BLACK };
+    let border = if focused {
+        theme::BRAND
+    } else {
+        theme::NEUTRAL_BRIGHT_BLACK
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" Courses ({}) ", main.dashboard.courses.len()))
@@ -103,14 +111,18 @@ fn render_courses(frame: &mut Frame, area: Rect, main: &MainState) {
         .map(|(idx, course)| {
             let selected = focused && idx == main.selected_row;
             let style = if selected {
-                Style::default().fg(theme::NEUTRAL_WHITE).bg(theme::PANEL_SELECTED)
+                Style::default()
+                    .fg(theme::NEUTRAL_WHITE)
+                    .bg(theme::PANEL_SELECTED)
             } else {
                 Style::default()
             };
             ListItem::new(Line::from(vec![
                 Span::styled(
                     format!("{:<10}", course.shortname),
-                    Style::default().fg(theme::BRAND).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme::BRAND)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" "),
                 Span::styled(course.fullname.clone(), style),
@@ -178,10 +190,17 @@ pub fn render_course_page(frame: &mut Frame, area: Rect, course: &CoursePageData
                 | CourseTreeNodeKind::ModuleDescription
                 | CourseTreeNodeKind::ModuleUrl
         );
-        let fg = if secondary { theme::NEUTRAL_GRAY } else { theme::NEUTRAL_WHITE };
+        let fg = if secondary {
+            theme::NEUTRAL_GRAY
+        } else {
+            theme::NEUTRAL_WHITE
+        };
         let mut style = Style::default().fg(fg);
         if is_selected {
-            style = style.bg(theme::PANEL_SELECTED).fg(theme::NEUTRAL_WHITE).add_modifier(Modifier::BOLD);
+            style = style
+                .bg(theme::PANEL_SELECTED)
+                .fg(theme::NEUTRAL_WHITE)
+                .add_modifier(Modifier::BOLD);
         }
         let line = if matches!(row.kind, CourseTreeNodeKind::Label) {
             Line::from(vec![

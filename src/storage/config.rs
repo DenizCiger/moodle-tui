@@ -18,7 +18,11 @@ pub fn load_config() -> Option<SavedConfig> {
         return None;
     }
 
-    let username = object.get("username").and_then(Value::as_str)?.trim().to_owned();
+    let username = object
+        .get("username")
+        .and_then(Value::as_str)?
+        .trim()
+        .to_owned();
     if username.is_empty() {
         return None;
     }

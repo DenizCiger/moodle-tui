@@ -1,9 +1,9 @@
 use crate::models::{
-    AssignmentDetail, AssignmentSubmissionStatus, Course, CourseSection, RuntimeConfig,
-    UpcomingAssignment,
+    AssignmentDetail, AssignmentSubmissionStatus, Course, CourseSection, QuizAttempt,
+    QuizAttemptData, QuizSummary, RuntimeConfig, UpcomingAssignment,
 };
 use crate::moodle::MoodleError;
-use crate::moodle::{assignments, auth, courses};
+use crate::moodle::{assignments, auth, courses, quizzes};
 use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
@@ -87,5 +87,50 @@ impl MoodleClient {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
         assignments::fetch_upcoming_assignments(&self.http, config, &token, now).await
+    }
+
+    pub async fn fetch_course_quizzes(
+        &self,
+        config: &RuntimeConfig,
+        course_id: i64,
+    ) -> Result<Vec<QuizSummary>, MoodleError> {
+        let token = self.request_token(config).await?;
+        quizzes::fetch_course_quizzes(&self.http, config, &token, course_id).await
+    }
+
+    pub async fn start_quiz_attempt(
+        &self,
+        config: &RuntimeConfig,
+        quiz_id: i64,
+    ) -> Result<QuizAttempt, MoodleError> {
+        let token = self.request_token(config).await?;
+        quizzes::start_or_resume_attempt(&self.http, config, &token, quiz_id).await
+    }
+
+    pub async fn fetch_quiz_attempt_data(
+        &self,
+        config: &RuntimeConfig,
+        attempt_id: i64,
+    ) -> Result<QuizAttemptData, MoodleError> {
+        let token = self.request_token(config).await?;
+        quizzes::fetch_attempt_data(&self.http, config, &token, attempt_id).await
+    }
+
+    pub async fn save_quiz_attempt(
+        &self,
+        config: &RuntimeConfig,
+        attempt: &QuizAttemptData,
+    ) -> Result<QuizAttemptData, MoodleError> {
+        let token = self.request_token(config).await?;
+        quizzes::save_attempt(&self.http, config, &token, attempt).await
+    }
+
+    pub async fn finish_quiz_attempt(
+        &self,
+        config: &RuntimeConfig,
+        attempt: &QuizAttemptData,
+    ) -> Result<(), MoodleError> {
+        let token = self.request_token(config).await?;
+        quizzes::finish_attempt(&self.http, config, &token, attempt).await
     }
 }

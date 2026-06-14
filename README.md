@@ -36,6 +36,33 @@ cargo test
 cargo build --release
 ```
 
+## Local Moodle quiz harness
+
+The local harness keeps Moodle data in Docker volumes so the seeded quiz remains
+available after setup.
+
+```sh
+docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml exec moodle php /scripts/local_moodle_quiz_seed.php
+cargo run
+```
+
+Login in the TUI with:
+
+- URL: `http://localhost:8080`
+- Username: `student`
+- Password: `studentpass`
+- Service: `moodle_mobile_app`
+
+Open course `TUI-QUIZ`, select `TUI supported questions quiz`, then press Enter.
+The seeded quiz contains true/false, short answer, and numerical questions that
+exercise the in-TUI quiz flow. The Moodle admin account is `admin` / `adminpass`.
+If Moodle returns `invaliddatarootpermissions`, run:
+
+```sh
+docker compose -f docker-compose.local.yml exec --user root moodle sh -lc "chmod -R 0777 /bitnami/moodledata /bitnami/moodle"
+```
+
 ## Status
 
 This is the Rust port. UI fidelity is in progress — the spine (login, dashboard list,

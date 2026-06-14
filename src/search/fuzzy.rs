@@ -14,7 +14,10 @@ pub fn fuzzy_match(query_raw: &str, candidate_raw: &str) -> Option<FuzzyMatch> {
     let query: Vec<char> = query_raw.to_lowercase().chars().collect();
     let candidate: Vec<char> = candidate_raw.to_lowercase().chars().collect();
     if query.is_empty() {
-        return Some(FuzzyMatch { score: 0.0, indices: Vec::new() });
+        return Some(FuzzyMatch {
+            score: 0.0,
+            indices: Vec::new(),
+        });
     }
     if candidate.is_empty() {
         return None;

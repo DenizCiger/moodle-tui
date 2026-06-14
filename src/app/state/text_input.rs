@@ -1,1 +1,1 @@
-pub use tui_components::input::{SearchKeyOutcome, SearchMode, SearchModalState, TextInputState};
+pub use tui_components::input::{SearchKeyOutcome, SearchModalState, SearchMode, TextInputState};

@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use tui_components::shortcuts::{
-    char_key, display as d, plain_char, shifted_char, ShortcutDisplay, ShortcutSection,
+    ShortcutDisplay, ShortcutSection, char_key, display as d, plain_char, shifted_char,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +50,7 @@ fn pick(ids: &[&'static str]) -> Vec<ShortcutDisplay> {
             "dashboard-refresh" => d(id, "r", "Refresh dashboard or active course page"),
             "dashboard-open-finder" => d(id, "/", "Open course finder"),
             "dashboard-open-content-finder" => d(id, "f", "Open course content finder"),
-            "dashboard-open-assignment-modal" => d(id, "Enter", "Open selected assignment details"),
+            "dashboard-open-assignment-modal" => d(id, "Enter", "Open selected assignment or quiz"),
             "dashboard-copy-link" => d(id, "c", "Copy selected link to clipboard"),
             "dashboard-open-link" => d(id, "Shift+C", "Open selected link in browser"),
             "dashboard-back" => d(id, "Esc", "Back to dashboard"),

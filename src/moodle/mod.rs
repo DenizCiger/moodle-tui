@@ -5,6 +5,8 @@ pub mod client;
 pub mod courses;
 pub mod html;
 pub mod normalize;
+pub mod quiz_html;
+pub mod quizzes;
 pub mod urls;
 
 pub use client::MoodleClient;

@@ -3,6 +3,7 @@ pub mod content_finder;
 pub mod course_tree;
 pub mod dashboard;
 pub mod login;
+pub mod quiz_modal;
 pub mod settings;
 pub mod shared;
 pub mod shell;

@@ -22,8 +22,16 @@ struct WeightedField<'a> {
 
 fn rank(course: &Course, query: &str) -> Option<(f64, CourseHighlight)> {
     let fields = [
-        WeightedField { value: &course.shortname, weight: 1.2, field: CourseField::Shortname },
-        WeightedField { value: &course.fullname, weight: 1.0, field: CourseField::Fullname },
+        WeightedField {
+            value: &course.shortname,
+            weight: 1.2,
+            field: CourseField::Shortname,
+        },
+        WeightedField {
+            value: &course.fullname,
+            weight: 1.0,
+            field: CourseField::Fullname,
+        },
         WeightedField {
             value: course.displayname.as_deref().unwrap_or(""),
             weight: 0.95,
@@ -80,7 +88,15 @@ pub fn filter_courses<'a>(
             .1
             .partial_cmp(&left.1)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.0.fullname.to_lowercase().cmp(&right.0.fullname.to_lowercase()))
+            .then_with(|| {
+                left.0
+                    .fullname
+                    .to_lowercase()
+                    .cmp(&right.0.fullname.to_lowercase())
+            })
     });
-    ranked.into_iter().map(|(course, _, hi)| (course, hi)).collect()
+    ranked
+        .into_iter()
+        .map(|(course, _, hi)| (course, hi))
+        .collect()
 }

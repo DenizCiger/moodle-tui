@@ -6,10 +6,7 @@ use crate::models::{RuntimeConfig, SavedConfig};
 use crate::storage;
 
 impl AppState {
-    pub fn handle_worker_event(
-        &mut self,
-        event: super::types::WorkerEvent,
-    ) -> Vec<AppCommand> {
+    pub fn handle_worker_event(&mut self, event: super::types::WorkerEvent) -> Vec<AppCommand> {
         use super::types::WorkerEvent;
 
         match event {
@@ -90,6 +87,119 @@ impl AppState {
                 }
                 Vec::new()
             }
+            WorkerEvent::QuizDetailLoaded {
+                course_id,
+                quiz_id,
+                result,
+            } => {
+                if let Screen::MainShell(main) = &mut self.screen {
+                    if let Some(modal) = &mut main.quiz_modal {
+                        if modal.course_id == course_id && modal.quiz_id == quiz_id {
+                            match result {
+                                Ok(summary) => {
+                                    modal.summary = summary;
+                                    modal.error = None;
+                                }
+                                Err(error) => modal.error = Some(error),
+                            }
+                            modal.loading = false;
+                        }
+                    }
+                }
+                Vec::new()
+            }
+            WorkerEvent::QuizAttemptStarted { quiz_id, result } => {
+                match result {
+                    Ok(attempt) => {
+                        if let Screen::MainShell(main) = &mut self.screen {
+                            if let Some(modal) = &mut main.quiz_modal {
+                                if modal.quiz_id == quiz_id {
+                                    modal.loading = true;
+                                    modal.error = None;
+                                }
+                            }
+                            if let Some(config) = main.config.clone() {
+                                return vec![AppCommand::LoadQuizAttempt(config, attempt.id)];
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        if let Screen::MainShell(main) = &mut self.screen {
+                            if let Some(modal) = &mut main.quiz_modal {
+                                if modal.quiz_id == quiz_id {
+                                    modal.loading = false;
+                                    modal.error = Some(error);
+                                }
+                            }
+                        }
+                    }
+                }
+                Vec::new()
+            }
+            WorkerEvent::QuizAttemptLoaded { attempt_id, result } => {
+                if let Screen::MainShell(main) = &mut self.screen {
+                    if let Some(modal) = &mut main.quiz_modal {
+                        match result {
+                            Ok(attempt) if attempt.attempt.id == attempt_id => {
+                                modal.attempt = Some(attempt);
+                                modal.loading = false;
+                                modal.saving = false;
+                                modal.finishing = false;
+                                modal.error = None;
+                                modal.selected_question = 0;
+                                modal.selected_control = 0;
+                                modal.selected_option = 0;
+                            }
+                            Ok(_) => {}
+                            Err(error) => {
+                                modal.loading = false;
+                                modal.error = Some(error);
+                            }
+                        }
+                    }
+                }
+                Vec::new()
+            }
+            WorkerEvent::QuizAttemptSaved { attempt_id, result } => {
+                if let Screen::MainShell(main) = &mut self.screen {
+                    if let Some(modal) = &mut main.quiz_modal {
+                        modal.saving = false;
+                        match result {
+                            Ok(attempt) if attempt.attempt.id == attempt_id => {
+                                modal.attempt = Some(attempt);
+                                modal.error = None;
+                                main.toast_id = main.toast_id.wrapping_add(1);
+                                main.toast = Some("Quiz answers saved.".into());
+                                return vec![AppCommand::ScheduleToastExpire(main.toast_id)];
+                            }
+                            Ok(_) => {}
+                            Err(error) => modal.error = Some(error),
+                        }
+                    }
+                }
+                Vec::new()
+            }
+            WorkerEvent::QuizAttemptFinished {
+                attempt_id: _,
+                result,
+            } => {
+                if let Screen::MainShell(main) = &mut self.screen {
+                    if let Some(modal) = &mut main.quiz_modal {
+                        modal.finishing = false;
+                        modal.confirm_finish = false;
+                        match result {
+                            Ok(()) => {
+                                main.toast_id = main.toast_id.wrapping_add(1);
+                                main.toast = Some("Quiz attempt finished.".into());
+                                main.quiz_modal = None;
+                                return vec![AppCommand::ScheduleToastExpire(main.toast_id)];
+                            }
+                            Err(error) => modal.error = Some(error),
+                        }
+                    }
+                }
+                Vec::new()
+            }
             WorkerEvent::Toast(message) => {
                 let mut id = 0u64;
                 if let Screen::MainShell(main) = &mut self.screen {
@@ -102,6 +212,12 @@ impl AppState {
             WorkerEvent::AssignmentListLoaded { course_id, list } => {
                 if let Screen::MainShell(main) = &mut self.screen {
                     main.assignment_list_by_course_id.insert(course_id, list);
+                }
+                Vec::new()
+            }
+            WorkerEvent::QuizListLoaded { course_id, list } => {
+                if let Screen::MainShell(main) = &mut self.screen {
+                    main.quiz_list_by_course_id.insert(course_id, list);
                 }
                 Vec::new()
             }

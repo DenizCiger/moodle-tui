@@ -15,12 +15,11 @@ pub fn open_url(url: &str) -> OpResult {
     }
 
     if cfg!(target_os = "linux") {
-        let candidates: &[(&str, &[&str])] = &[
-            ("xdg-open", &[]),
-            ("sensible-browser", &[]),
-        ];
-        let available: Vec<&(&str, &[&str])> =
-            candidates.iter().filter(|(cmd, _)| command_exists(cmd)).collect();
+        let candidates: &[(&str, &[&str])] = &[("xdg-open", &[]), ("sensible-browser", &[])];
+        let available: Vec<&(&str, &[&str])> = candidates
+            .iter()
+            .filter(|(cmd, _)| command_exists(cmd))
+            .collect();
         if available.is_empty() {
             return Err("No browser launcher found (tried xdg-open, sensible-browser).".to_owned());
         }
@@ -43,11 +42,17 @@ pub fn open_url(url: &str) -> OpResult {
         return run("cmd", &["/c", "start", "", target]);
     }
 
-    Err(format!("Browser opening is not supported on '{}'.", std::env::consts::OS))
+    Err(format!(
+        "Browser opening is not supported on '{}'.",
+        std::env::consts::OS
+    ))
 }
 
 fn run(command: &str, args: &[&str]) -> OpResult {
-    let output = Command::new(command).args(args).output().map_err(|e| e.to_string())?;
+    let output = Command::new(command)
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
     }

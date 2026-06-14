@@ -36,7 +36,10 @@ fn module_type_label(kind: &str) -> String {
                 "Other Activities".into()
             } else {
                 let mut chars = normalized.chars();
-                let head = chars.next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+                let head = chars
+                    .next()
+                    .map(|c| c.to_uppercase().to_string())
+                    .unwrap_or_default();
                 format!("{head}{} Activities", chars.as_str())
             }
         }
@@ -59,8 +62,14 @@ pub fn build_targets(rows: &[CourseTreeRow]) -> Vec<ContentTarget> {
 
     let mut sorted: Vec<String> = module_types.into_iter().collect();
     sorted.sort_by(|a, b| {
-        let ai = MODULE_TYPE_ORDER.iter().position(|m| *m == a).unwrap_or(usize::MAX);
-        let bi = MODULE_TYPE_ORDER.iter().position(|m| *m == b).unwrap_or(usize::MAX);
+        let ai = MODULE_TYPE_ORDER
+            .iter()
+            .position(|m| *m == a)
+            .unwrap_or(usize::MAX);
+        let bi = MODULE_TYPE_ORDER
+            .iter()
+            .position(|m| *m == b)
+            .unwrap_or(usize::MAX);
         ai.cmp(&bi).then_with(|| a.cmp(b))
     });
 
@@ -79,9 +88,17 @@ pub fn build_targets(rows: &[CourseTreeRow]) -> Vec<ContentTarget> {
     for (id, label, kind) in [
         ("kind:section", "Sections", CourseTreeNodeKind::Section),
         ("kind:label", "Labels", CourseTreeNodeKind::Label),
-        ("kind:content-item", "Files & Items", CourseTreeNodeKind::ContentItem),
+        (
+            "kind:content-item",
+            "Files & Items",
+            CourseTreeNodeKind::ContentItem,
+        ),
         ("kind:module-url", "URLs", CourseTreeNodeKind::ModuleUrl),
-        ("kind:module-description", "Descriptions", CourseTreeNodeKind::ModuleDescription),
+        (
+            "kind:module-description",
+            "Descriptions",
+            CourseTreeNodeKind::ModuleDescription,
+        ),
         ("kind:summary", "Summaries", CourseTreeNodeKind::Summary),
     ] {
         targets.push(ContentTarget {
@@ -102,7 +119,11 @@ pub fn filter_by_target<'a>(
             TargetMode::All => true,
             TargetMode::ModuleType(t) => {
                 matches!(row.kind, CourseTreeNodeKind::Module)
-                    && row.module_type.as_deref().map(|s| s.trim().to_lowercase()).as_deref()
+                    && row
+                        .module_type
+                        .as_deref()
+                        .map(|s| s.trim().to_lowercase())
+                        .as_deref()
                         == Some(t.as_str())
             }
             TargetMode::RowKind(kind) => row.kind == *kind,

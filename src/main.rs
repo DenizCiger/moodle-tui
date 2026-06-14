@@ -100,24 +100,26 @@ fn dispatch(
 }
 
 fn spawn_input_thread(tx: mpsc::UnboundedSender<RuntimeEvent>) {
-    std::thread::spawn(move || loop {
-        if !event::poll(Duration::from_millis(100)).unwrap_or(false) {
-            continue;
-        }
-        match event::read() {
-            Ok(CrosstermEvent::Key(key)) => {
-                if key.kind == KeyEventKind::Press {
-                    let _ = tx.send(RuntimeEvent::Key(key));
+    std::thread::spawn(move || {
+        loop {
+            if !event::poll(Duration::from_millis(100)).unwrap_or(false) {
+                continue;
+            }
+            match event::read() {
+                Ok(CrosstermEvent::Key(key)) => {
+                    if key.kind == KeyEventKind::Press {
+                        let _ = tx.send(RuntimeEvent::Key(key));
+                    }
                 }
+                Ok(CrosstermEvent::Mouse(mouse)) => {
+                    let _ = tx.send(RuntimeEvent::Mouse(mouse));
+                }
+                Ok(CrosstermEvent::Resize(w, h)) => {
+                    let _ = tx.send(RuntimeEvent::Resize(w, h));
+                }
+                Ok(_) => {}
+                Err(_) => break,
             }
-            Ok(CrosstermEvent::Mouse(mouse)) => {
-                let _ = tx.send(RuntimeEvent::Mouse(mouse));
-            }
-            Ok(CrosstermEvent::Resize(w, h)) => {
-                let _ = tx.send(RuntimeEvent::Resize(w, h));
-            }
-            Ok(_) => {}
-            Err(_) => break,
         }
     });
 }
@@ -139,7 +141,11 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                     .as_ref()
                     .and_then(|c| storage::secret::load_password(c).ok().flatten());
                 let diag = storage::secret::get_secure_storage_diagnostic();
-                let warning = if diag.available { None } else { Some(diag.message) };
+                let warning = if diag.available {
+                    None
+                } else {
+                    Some(diag.message)
+                };
                 let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::BootstrapLoaded {
                     saved_config,
                     password,
@@ -202,23 +208,22 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                 match client.fetch_course_assignments(&config, course_id).await {
                     Ok(list) => {
                         let detail = list.iter().find(|a| a.id == assignment_id).cloned();
-                        let _ = tx.send(RuntimeEvent::Worker(
-                            WorkerEvent::AssignmentListLoaded { course_id, list },
-                        ));
-                        let _ = tx.send(RuntimeEvent::Worker(
-                            WorkerEvent::AssignmentDetailLoaded {
+                        let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::AssignmentListLoaded {
+                            course_id,
+                            list,
+                        }));
+                        let _ =
+                            tx.send(RuntimeEvent::Worker(WorkerEvent::AssignmentDetailLoaded {
                                 assignment_id,
                                 result: Ok(detail),
-                            },
-                        ));
+                            }));
                     }
                     Err(error) => {
-                        let _ = tx.send(RuntimeEvent::Worker(
-                            WorkerEvent::AssignmentDetailLoaded {
+                        let _ =
+                            tx.send(RuntimeEvent::Worker(WorkerEvent::AssignmentDetailLoaded {
                                 assignment_id,
                                 result: Err(error.to_string()),
-                            },
-                        ));
+                            }));
                     }
                 }
             });
@@ -230,9 +235,90 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                     .fetch_assignment_submission_status(&config, assignment_id)
                     .await
                     .map_err(|e| e.to_string());
-                let _ = tx.send(RuntimeEvent::Worker(
-                    WorkerEvent::AssignmentStatusLoaded { assignment_id, result },
-                ));
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::AssignmentStatusLoaded {
+                    assignment_id,
+                    result,
+                }));
+            });
+        }
+        AppCommand::LoadQuizDetail(config, course_id, quiz_id) => {
+            tokio::spawn(async move {
+                let client = MoodleClient::new();
+                match client.fetch_course_quizzes(&config, course_id).await {
+                    Ok(list) => {
+                        let detail = list.iter().find(|q| q.id == quiz_id).cloned();
+                        let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::QuizListLoaded {
+                            course_id,
+                            list,
+                        }));
+                        let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::QuizDetailLoaded {
+                            course_id,
+                            quiz_id,
+                            result: Ok(detail),
+                        }));
+                    }
+                    Err(error) => {
+                        let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::QuizDetailLoaded {
+                            course_id,
+                            quiz_id,
+                            result: Err(error.to_string()),
+                        }));
+                    }
+                }
+            });
+        }
+        AppCommand::StartQuizAttempt(config, quiz_id) => {
+            tokio::spawn(async move {
+                let client = MoodleClient::new();
+                let result = client
+                    .start_quiz_attempt(&config, quiz_id)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::QuizAttemptStarted {
+                    quiz_id,
+                    result,
+                }));
+            });
+        }
+        AppCommand::LoadQuizAttempt(config, attempt_id) => {
+            tokio::spawn(async move {
+                let client = MoodleClient::new();
+                let result = client
+                    .fetch_quiz_attempt_data(&config, attempt_id)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::QuizAttemptLoaded {
+                    attempt_id,
+                    result,
+                }));
+            });
+        }
+        AppCommand::SaveQuizAttempt(config, attempt) => {
+            tokio::spawn(async move {
+                let client = MoodleClient::new();
+                let attempt_id = attempt.attempt.id;
+                let result = client
+                    .save_quiz_attempt(&config, &attempt)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::QuizAttemptSaved {
+                    attempt_id,
+                    result,
+                }));
+            });
+        }
+        AppCommand::FinishQuizAttempt(config, attempt) => {
+            tokio::spawn(async move {
+                let client = MoodleClient::new();
+                let attempt_id = attempt.attempt.id;
+                let result = client
+                    .finish_quiz_attempt(&config, &attempt)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::QuizAttemptFinished {
+                    attempt_id,
+                    result,
+                }));
             });
         }
         AppCommand::OpenUrl(url) => {
@@ -282,12 +368,10 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                 match client.fetch_course_assignments(&config, course_id).await {
                     Ok(list) => {
                         let cmid = list.iter().find(|a| a.id == upcoming_id).map(|a| a.cmid);
-                        let _ = tx.send(RuntimeEvent::Worker(
-                            WorkerEvent::AssignmentListLoaded {
-                                course_id,
-                                list,
-                            },
-                        ));
+                        let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::AssignmentListLoaded {
+                            course_id,
+                            list,
+                        }));
                         match cmid {
                             Some(cmid) => {
                                 let url = moodle_tui::moodle::urls::build_assignment_activity_url(

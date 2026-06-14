@@ -28,7 +28,10 @@ pub async fn request_token(
     if let Some(token) = token {
         return Ok(token);
     }
-    let reason: Vec<String> = [error, errorcode, debuginfo].into_iter().flatten().collect();
+    let reason: Vec<String> = [error, errorcode, debuginfo]
+        .into_iter()
+        .flatten()
+        .collect();
     let message = if reason.is_empty() {
         "Token request failed".to_owned()
     } else {

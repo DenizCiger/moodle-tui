@@ -1,13 +1,15 @@
 use crate::app::state::AppState;
 use crate::app::state::types::{CourseView, MainState};
-use crate::ui::{assignment_modal, course_tree, dashboard, settings, theme};
+use crate::ui::{assignment_modal, course_tree, dashboard, quiz_modal, settings, theme};
 use chrono::TimeZone;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use tui_components::ui::search::{SearchModal, SearchModalCategory, SearchModalRow, highlight_spans};
+use tui_components::ui::search::{
+    SearchModal, SearchModalCategory, SearchModalRow, highlight_spans,
+};
 
 pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     let area = frame.area();
@@ -36,6 +38,9 @@ pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     if let Some(modal) = &main.assignment_modal {
         assignment_modal::render(frame, modal);
     }
+    if let Some(modal) = &main.quiz_modal {
+        quiz_modal::render(frame, modal);
+    }
 
     if main.course_finder_open || main.content_finder_open {
         render_finder(frame, main);
@@ -46,7 +51,12 @@ pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     }
 }
 
-fn render_header(frame: &mut Frame, area: ratatui::layout::Rect, main: &MainState, state: &AppState) {
+fn render_header(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    main: &MainState,
+    state: &AppState,
+) {
     let username = state
         .saved_config
         .as_ref()
@@ -65,17 +75,35 @@ fn render_header(frame: &mut Frame, area: ratatui::layout::Rect, main: &MainStat
         }
     };
     let line = Line::from(vec![
-        Span::styled(" moodle-tui ", Style::default().fg(theme::NEUTRAL_BLACK).bg(theme::BRAND).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " moodle-tui ",
+            Style::default()
+                .fg(theme::NEUTRAL_BLACK)
+                .bg(theme::BRAND)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" "),
-        Span::styled(title, Style::default().fg(theme::NEUTRAL_WHITE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            title,
+            Style::default()
+                .fg(theme::NEUTRAL_WHITE)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  "),
-        Span::styled(format!("[{username}]"), Style::default().fg(theme::NEUTRAL_GRAY)),
+        Span::styled(
+            format!("[{username}]"),
+            Style::default().fg(theme::NEUTRAL_GRAY),
+        ),
     ]);
     frame.render_widget(Paragraph::new(line), area);
 }
 
 fn render_footer(frame: &mut Frame, area: ratatui::layout::Rect, main: &MainState) {
-    let mut hints = vec!["? help".to_owned(), "/ courses".to_owned(), "r refresh".to_owned()];
+    let mut hints = vec![
+        "? help".to_owned(),
+        "/ courses".to_owned(),
+        "r refresh".to_owned(),
+    ];
     if matches!(main.view, CourseView::Course(_)) {
         hints.push("Esc back".to_owned());
         hints.push("f content".to_owned());
@@ -107,7 +135,9 @@ fn render_finder(frame: &mut Frame, main: &MainState) {
     if main.course_finder_open {
         use crate::search::courses::CourseField;
         let filtered = filter_courses(&main.dashboard.courses, &main.finder.input.value);
-        let shortname_base = Style::default().fg(theme::BRAND).add_modifier(Modifier::BOLD);
+        let shortname_base = Style::default()
+            .fg(theme::BRAND)
+            .add_modifier(Modifier::BOLD);
         let highlight_style = Style::default()
             .fg(theme::WARNING)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
@@ -116,12 +146,22 @@ fn render_finder(frame: &mut Frame, main: &MainState) {
             .map(|(course, hi)| {
                 let padded_shortname = format!("{:<10}", course.shortname);
                 let shortname_spans = if matches!(hi.field, Some(CourseField::Shortname)) {
-                    highlight_spans(&padded_shortname, &hi.indices, shortname_base, highlight_style)
+                    highlight_spans(
+                        &padded_shortname,
+                        &hi.indices,
+                        shortname_base,
+                        highlight_style,
+                    )
                 } else {
                     vec![Span::styled(padded_shortname, shortname_base)]
                 };
                 let fullname_spans = if matches!(hi.field, Some(CourseField::Fullname)) {
-                    highlight_spans(&course.fullname, &hi.indices, Style::default(), highlight_style)
+                    highlight_spans(
+                        &course.fullname,
+                        &hi.indices,
+                        Style::default(),
+                        highlight_style,
+                    )
                 } else {
                     vec![Span::raw(course.fullname.clone())]
                 };

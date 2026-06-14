@@ -1,7 +1,7 @@
 use crate::app::state::text_input::{SearchModalState, TextInputState};
 use crate::models::{
-    AssignmentDetail, AssignmentSubmissionStatus, Course, CourseSection, RuntimeConfig,
-    SavedConfig, UpcomingAssignment,
+    AssignmentDetail, AssignmentSubmissionStatus, Course, CourseSection, QuizAttemptData,
+    QuizSummary, RuntimeConfig, SavedConfig, UpcomingAssignment,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -86,6 +86,7 @@ pub struct MainState {
     pub settings_open: bool,
     pub settings_scroll: u16,
     pub assignment_modal: Option<AssignmentModalData>,
+    pub quiz_modal: Option<QuizModalData>,
     pub course_finder_open: bool,
     pub content_finder_open: bool,
     pub finder: SearchModalState,
@@ -94,6 +95,7 @@ pub struct MainState {
     pub toast_id: u64,
     pub dashboard_focus: DashboardPane,
     pub assignment_list_by_course_id: std::collections::HashMap<i64, Vec<AssignmentDetail>>,
+    pub quiz_list_by_course_id: std::collections::HashMap<i64, Vec<QuizSummary>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +137,27 @@ pub struct AssignmentModalData {
     pub detail_error: Option<String>,
     pub loading: bool,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct QuizModalData {
+    pub course_id: i64,
+    pub quiz_id: i64,
+    pub cmid: i64,
+    pub quiz_name: String,
+    pub course_name: String,
+    pub module_description: Option<String>,
+    pub module_url: Option<String>,
+    pub summary: Option<QuizSummary>,
+    pub attempt: Option<QuizAttemptData>,
+    pub loading: bool,
+    pub saving: bool,
+    pub finishing: bool,
+    pub confirm_finish: bool,
+    pub error: Option<String>,
+    pub selected_question: usize,
+    pub selected_control: usize,
+    pub selected_option: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -196,6 +219,11 @@ pub enum AppCommand {
     LoadCoursePage(RuntimeConfig, i64),
     LoadAssignmentDetail(RuntimeConfig, i64, i64),
     LoadAssignmentStatus(RuntimeConfig, i64),
+    LoadQuizDetail(RuntimeConfig, i64, i64),
+    StartQuizAttempt(RuntimeConfig, i64),
+    LoadQuizAttempt(RuntimeConfig, i64),
+    SaveQuizAttempt(RuntimeConfig, QuizAttemptData),
+    FinishQuizAttempt(RuntimeConfig, QuizAttemptData),
     OpenUrl(String),
     CopyToClipboard(String),
     ShowToast(String),
@@ -235,10 +263,35 @@ pub enum WorkerEvent {
         assignment_id: i64,
         result: Result<Option<AssignmentSubmissionStatus>, String>,
     },
+    QuizDetailLoaded {
+        course_id: i64,
+        quiz_id: i64,
+        result: Result<Option<QuizSummary>, String>,
+    },
+    QuizAttemptStarted {
+        quiz_id: i64,
+        result: Result<crate::models::QuizAttempt, String>,
+    },
+    QuizAttemptLoaded {
+        attempt_id: i64,
+        result: Result<QuizAttemptData, String>,
+    },
+    QuizAttemptSaved {
+        attempt_id: i64,
+        result: Result<QuizAttemptData, String>,
+    },
+    QuizAttemptFinished {
+        attempt_id: i64,
+        result: Result<(), String>,
+    },
     Toast(String),
     ToastExpire(u64),
     AssignmentListLoaded {
         course_id: i64,
         list: Vec<AssignmentDetail>,
+    },
+    QuizListLoaded {
+        course_id: i64,
+        list: Vec<QuizSummary>,
     },
 }

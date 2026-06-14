@@ -9,11 +9,11 @@ pub async fn fetch_courses(
     config: &RuntimeConfig,
     token: &str,
 ) -> Result<Vec<Course>, MoodleError> {
-    let site_info = call_webservice(client, config, token, "core_webservice_get_site_info", &[]).await?;
-    let user_id = site_info
-        .get("userid")
-        .and_then(as_i64)
-        .ok_or_else(|| MoodleError::message("Could not resolve current user id from Moodle site info"))?;
+    let site_info =
+        call_webservice(client, config, token, "core_webservice_get_site_info", &[]).await?;
+    let user_id = site_info.get("userid").and_then(as_i64).ok_or_else(|| {
+        MoodleError::message("Could not resolve current user id from Moodle site info")
+    })?;
 
     let raw = call_webservice(
         client,
@@ -30,7 +30,9 @@ pub async fn fetch_courses(
 
     let mut courses: Vec<Course> = array.iter().filter_map(normalize_course).collect();
     courses.sort_by(|left, right| {
-        left.fullname.to_lowercase().cmp(&right.fullname.to_lowercase())
+        left.fullname
+            .to_lowercase()
+            .cmp(&right.fullname.to_lowercase())
     });
     Ok(courses)
 }

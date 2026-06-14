@@ -1,15 +1,16 @@
 use crate::app::state::types::{
     AppCommand, AppState, AssignmentModalData, CourseView, DashboardPane, LinkAction, LoginFocus,
-    MainState, Screen,
+    MainState, QuizModalData, Screen,
 };
-use crate::moodle::urls::{build_assignment_activity_url, build_course_view_url};
-use crate::ui::course_tree::{
-    CourseTreeNodeKind, CourseTreeRow, build_course_tree_rows,
-};
+use crate::models::QuizAnswerKind;
 use crate::models::RuntimeConfig;
+use crate::moodle::urls::{build_assignment_activity_url, build_course_view_url};
 use crate::shortcuts::is_shortcut_pressed;
+use crate::ui::course_tree::{CourseTreeNodeKind, CourseTreeRow, build_course_tree_rows};
 use crossterm::event::{KeyEvent, MouseEvent};
-use tui_components::input::login::{handle_login_key as handle_shared_login_key, LoginKeyBindings, LoginKeyOutcome};
+use tui_components::input::login::{
+    LoginKeyBindings, LoginKeyOutcome, handle_login_key as handle_shared_login_key,
+};
 
 impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -101,7 +102,9 @@ fn handle_login_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
             vec![AppCommand::ValidateLogin(config)]
         }
         LoginKeyOutcome::SavedLogin => {
-            if let (Some(saved), Some(password)) = (state.saved_config.clone(), state.saved_password.clone()) {
+            if let (Some(saved), Some(password)) =
+                (state.saved_config.clone(), state.saved_password.clone())
+            {
                 let config = RuntimeConfig {
                     base_url: saved.base_url,
                     username: saved.username,
@@ -166,6 +169,9 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
     if main.assignment_modal.is_some() {
         return handle_assignment_modal_key(main, key);
     }
+    if main.quiz_modal.is_some() {
+        return handle_quiz_modal_key(main, key);
+    }
 
     if main.course_finder_open {
         return handle_finder_key(main, key, true);
@@ -227,9 +233,7 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
         }
         return Vec::new();
     }
-    if key.code == crossterm::event::KeyCode::Tab
-        && matches!(main.view, CourseView::Dashboard)
-    {
+    if key.code == crossterm::event::KeyCode::Tab && matches!(main.view, CourseView::Dashboard) {
         main.dashboard_focus = main.dashboard_focus.toggle();
         main.selected_row = 0;
         return Vec::new();
@@ -308,16 +312,24 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
 fn resolve_course_link_action(main: &MainState, action: LinkAction) -> Vec<AppCommand> {
     let course = match main.dashboard.courses.get(main.selected_row) {
         Some(c) => c,
-        None => return vec![AppCommand::ShowToast("No link available on this item.".into())],
+        None => {
+            return vec![AppCommand::ShowToast(
+                "No link available on this item.".into(),
+            )];
+        }
     };
-    let url = course.courseurl.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| {
-        let base = main
-            .config
-            .as_ref()
-            .map(|c| c.base_url.as_str())
-            .unwrap_or("");
-        build_course_view_url(base, course.id)
-    });
+    let url = course
+        .courseurl
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            let base = main
+                .config
+                .as_ref()
+                .map(|c| c.base_url.as_str())
+                .unwrap_or("");
+            build_course_view_url(base, course.id)
+        });
     match action {
         LinkAction::Open => vec![AppCommand::OpenUrl(url)],
         LinkAction::Copy => vec![AppCommand::CopyToClipboard(url)],
@@ -328,7 +340,9 @@ fn resolve_upcoming_link_action(main: &mut MainState, action: LinkAction) -> Vec
     let assignment = match main.dashboard.upcoming.get(main.selected_row).cloned() {
         Some(a) => a,
         None => {
-            return vec![AppCommand::ShowToast("No link available on this item.".into())];
+            return vec![AppCommand::ShowToast(
+                "No link available on this item.".into(),
+            )];
         }
     };
     if let Some(list) = main.assignment_list_by_course_id.get(&assignment.course_id) {
@@ -347,7 +361,11 @@ fn resolve_upcoming_link_action(main: &mut MainState, action: LinkAction) -> Vec
     }
     let config = match main.config.clone() {
         Some(c) => c,
-        None => return vec![AppCommand::ShowToast("No link available on this item.".into())],
+        None => {
+            return vec![AppCommand::ShowToast(
+                "No link available on this item.".into(),
+            )];
+        }
     };
     vec![AppCommand::ResolveUpcomingLink {
         config,
@@ -457,13 +475,17 @@ fn handle_course_view_key(main: &mut MainState, key: KeyEvent) -> Option<Vec<App
     if is_shortcut_pressed("dashboard-open-link", key) {
         return Some(match rows[selected].link_url.clone() {
             Some(url) => vec![AppCommand::OpenUrl(url)],
-            None => vec![AppCommand::ShowToast("No link available on this item.".into())],
+            None => vec![AppCommand::ShowToast(
+                "No link available on this item.".into(),
+            )],
         });
     }
     if is_shortcut_pressed("dashboard-copy-link", key) {
         return Some(match rows[selected].link_url.clone() {
             Some(url) => vec![AppCommand::CopyToClipboard(url)],
-            None => vec![AppCommand::ShowToast("No link available on this item.".into())],
+            None => vec![AppCommand::ShowToast(
+                "No link available on this item.".into(),
+            )],
         });
     }
     if is_shortcut_pressed("dashboard-open-assignment-modal", key) {
@@ -473,9 +495,77 @@ fn handle_course_view_key(main: &mut MainState, key: KeyEvent) -> Option<Vec<App
         {
             return Some(open_modal_for_course_module(main, &rows, selected));
         }
+        if matches!(row.kind, CourseTreeNodeKind::Module)
+            && row.module_type.as_deref() == Some("quiz")
+        {
+            return Some(open_quiz_for_course_module(main, &rows, selected));
+        }
         return Some(Vec::new());
     }
     None
+}
+
+fn open_quiz_for_course_module(
+    main: &mut MainState,
+    rows: &[CourseTreeRow],
+    selected: usize,
+) -> Vec<AppCommand> {
+    let row = &rows[selected];
+    let course = match &main.view {
+        CourseView::Course(c) => c,
+        _ => return Vec::new(),
+    };
+    let course_id = course.course_id;
+    let course_name = if !course.course_full_name.is_empty() {
+        course.course_full_name.clone()
+    } else {
+        course.course_short_name.clone()
+    };
+    let parts: Vec<&str> = row.id.split(':').collect();
+    let section_id: Option<i64> = parts.get(1).and_then(|s| s.parse().ok());
+    let cmid: Option<i64> = parts.get(2).and_then(|s| s.parse().ok());
+    let (Some(section_id), Some(cmid)) = (section_id, cmid) else {
+        return Vec::new();
+    };
+    let module = course
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .and_then(|s| s.modules.iter().find(|m| m.id == cmid));
+    let quiz_id = match module.and_then(|m| m.instance) {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+    let description = rows
+        .iter()
+        .find(|r| {
+            matches!(r.kind, CourseTreeNodeKind::ModuleDescription)
+                && r.parent_id.as_deref() == Some(row.id.as_str())
+        })
+        .map(|r| r.text.clone());
+    main.quiz_modal = Some(QuizModalData {
+        course_id,
+        quiz_id,
+        cmid,
+        quiz_name: row.text.clone(),
+        course_name,
+        module_description: description,
+        module_url: row.link_url.clone(),
+        summary: None,
+        attempt: None,
+        loading: true,
+        saving: false,
+        finishing: false,
+        confirm_finish: false,
+        error: None,
+        selected_question: 0,
+        selected_control: 0,
+        selected_option: 0,
+    });
+    if let Some(config) = main.config.clone() {
+        return vec![AppCommand::LoadQuizDetail(config, course_id, quiz_id)];
+    }
+    Vec::new()
 }
 
 fn open_modal_for_course_module(
@@ -570,23 +660,246 @@ fn handle_assignment_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCo
             Some(m) => m,
             None => return Vec::new(),
         };
-        let base = main.config.as_ref().map(|c| c.base_url.as_str()).unwrap_or("");
-        let url = modal
-            .module_url
-            .clone()
-            .or_else(|| modal.detail.as_ref().map(|d| build_assignment_activity_url(base, d.cmid)));
+        let base = main
+            .config
+            .as_ref()
+            .map(|c| c.base_url.as_str())
+            .unwrap_or("");
+        let url = modal.module_url.clone().or_else(|| {
+            modal
+                .detail
+                .as_ref()
+                .map(|d| build_assignment_activity_url(base, d.cmid))
+        });
         return match url {
             Some(url) => match action {
                 LinkAction::Open => vec![AppCommand::OpenUrl(url)],
                 LinkAction::Copy => vec![AppCommand::CopyToClipboard(url)],
             },
-            None => vec![AppCommand::ShowToast("No link available on this item.".into())],
+            None => vec![AppCommand::ShowToast(
+                "No link available on this item.".into(),
+            )],
         };
     }
     Vec::new()
 }
 
-fn handle_finder_key(main: &mut MainState, key: KeyEvent, is_course_finder: bool) -> Vec<AppCommand> {
+fn handle_quiz_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand> {
+    use crossterm::event::KeyCode;
+    if is_shortcut_pressed("assignment-modal-close", key) {
+        main.quiz_modal = None;
+        return Vec::new();
+    }
+    if is_shortcut_pressed("dashboard-open-link", key)
+        || is_shortcut_pressed("dashboard-copy-link", key)
+    {
+        let action = if is_shortcut_pressed("dashboard-open-link", key) {
+            LinkAction::Open
+        } else {
+            LinkAction::Copy
+        };
+        let modal = match &main.quiz_modal {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+        let base = main
+            .config
+            .as_ref()
+            .map(|c| c.base_url.as_str())
+            .unwrap_or("");
+        let url = modal.module_url.clone().or_else(|| {
+            Some(crate::moodle::urls::build_quiz_activity_url(
+                base, modal.cmid,
+            ))
+        });
+        return match url {
+            Some(url) => match action {
+                LinkAction::Open => vec![AppCommand::OpenUrl(url)],
+                LinkAction::Copy => vec![AppCommand::CopyToClipboard(url)],
+            },
+            None => vec![AppCommand::ShowToast(
+                "No link available on this item.".into(),
+            )],
+        };
+    }
+
+    let modal = match &mut main.quiz_modal {
+        Some(m) => m,
+        None => return Vec::new(),
+    };
+    if modal.loading || modal.saving || modal.finishing {
+        return Vec::new();
+    }
+    if modal.attempt.is_none() {
+        if key.code == KeyCode::Enter {
+            modal.loading = true;
+            modal.error = None;
+            if let Some(config) = main.config.clone() {
+                return vec![AppCommand::StartQuizAttempt(config, modal.quiz_id)];
+            }
+        }
+        return Vec::new();
+    }
+
+    if modal.confirm_finish {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                modal.finishing = true;
+                modal.error = None;
+                if let (Some(config), Some(attempt)) = (main.config.clone(), modal.attempt.clone())
+                {
+                    return vec![AppCommand::FinishQuizAttempt(config, attempt)];
+                }
+            }
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                modal.confirm_finish = false;
+            }
+            _ => {}
+        }
+        return Vec::new();
+    }
+
+    match key.code {
+        KeyCode::Up => {
+            modal.selected_control = modal.selected_control.saturating_sub(1);
+            modal.selected_option = 0;
+        }
+        KeyCode::Down => {
+            let max = current_question_controls(modal).saturating_sub(1);
+            modal.selected_control = (modal.selected_control + 1).min(max);
+            modal.selected_option = 0;
+        }
+        KeyCode::Left => {
+            modal.selected_option = modal.selected_option.saturating_sub(1);
+        }
+        KeyCode::Right => {
+            let max = current_control_options(modal).saturating_sub(1);
+            modal.selected_option = (modal.selected_option + 1).min(max);
+        }
+        KeyCode::PageUp => {
+            modal.selected_question = modal.selected_question.saturating_sub(1);
+            modal.selected_control = 0;
+            modal.selected_option = 0;
+        }
+        KeyCode::PageDown => {
+            let max = modal
+                .attempt
+                .as_ref()
+                .map(|a| a.questions.len().saturating_sub(1))
+                .unwrap_or(0);
+            modal.selected_question = (modal.selected_question + 1).min(max);
+            modal.selected_control = 0;
+            modal.selected_option = 0;
+        }
+        KeyCode::Char(' ') => toggle_selected_option(modal),
+        KeyCode::Backspace => edit_selected_text(modal, None, true),
+        KeyCode::Char('s') => {
+            modal.saving = true;
+            modal.error = None;
+            if let (Some(config), Some(attempt)) = (main.config.clone(), modal.attempt.clone()) {
+                return vec![AppCommand::SaveQuizAttempt(config, attempt)];
+            }
+        }
+        KeyCode::Char('F') => {
+            modal.confirm_finish = true;
+        }
+        KeyCode::Char(ch) => edit_selected_text(modal, Some(ch), false),
+        _ => {}
+    }
+    Vec::new()
+}
+
+fn current_question_controls(modal: &QuizModalData) -> usize {
+    modal
+        .attempt
+        .as_ref()
+        .and_then(|a| a.questions.get(modal.selected_question))
+        .map(|q| {
+            q.controls
+                .iter()
+                .filter(|c| c.kind != QuizAnswerKind::Hidden)
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn current_control_options(modal: &QuizModalData) -> usize {
+    selected_control(modal)
+        .map(|(_, control)| control.options.len())
+        .unwrap_or(0)
+}
+
+fn selected_control(modal: &QuizModalData) -> Option<(usize, &crate::models::QuizAnswerControl)> {
+    let question = modal
+        .attempt
+        .as_ref()?
+        .questions
+        .get(modal.selected_question)?;
+    question
+        .controls
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.kind != QuizAnswerKind::Hidden)
+        .nth(modal.selected_control)
+}
+
+fn selected_control_mut(
+    modal: &mut QuizModalData,
+) -> Option<&mut crate::models::QuizAnswerControl> {
+    let question = modal
+        .attempt
+        .as_mut()?
+        .questions
+        .get_mut(modal.selected_question)?;
+    let idx = question
+        .controls
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.kind != QuizAnswerKind::Hidden)
+        .nth(modal.selected_control)
+        .map(|(idx, _)| idx)?;
+    question.controls.get_mut(idx)
+}
+
+fn toggle_selected_option(modal: &mut QuizModalData) {
+    let selected_option = modal.selected_option;
+    if let Some(control) = selected_control_mut(modal) {
+        match control.kind {
+            QuizAnswerKind::SingleChoice => {
+                for (idx, option) in control.options.iter_mut().enumerate() {
+                    option.selected = idx == selected_option;
+                }
+            }
+            QuizAnswerKind::MultiChoice => {
+                if let Some(option) = control.options.get_mut(selected_option) {
+                    option.selected = !option.selected;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn edit_selected_text(modal: &mut QuizModalData, ch: Option<char>, backspace: bool) {
+    if let Some(control) = selected_control_mut(modal) {
+        if control.kind != QuizAnswerKind::Text {
+            return;
+        }
+        if backspace {
+            control.value.pop();
+        } else if let Some(ch) = ch {
+            if !ch.is_control() {
+                control.value.push(ch);
+            }
+        }
+    }
+}
+
+fn handle_finder_key(
+    main: &mut MainState,
+    key: KeyEvent,
+    is_course_finder: bool,
+) -> Vec<AppCommand> {
     use crate::app::state::text_input::{SearchKeyOutcome, SearchMode};
     use crate::search::courses::filter_courses;
 
@@ -597,8 +910,11 @@ fn handle_finder_key(main: &mut MainState, key: KeyEvent, is_course_finder: bool
         if let CourseView::Course(course) = &main.view {
             let rows = build_course_tree_rows(&course.sections, &course.collapsed);
             let targets = crate::ui::content_finder::build_targets(&rows);
-            let delta: isize =
-                if is_shortcut_pressed("course-content-finder-target-prev", key) { -1 } else { 1 };
+            let delta: isize = if is_shortcut_pressed("course-content-finder-target-prev", key) {
+                -1
+            } else {
+                1
+            };
             main.finder_target_idx =
                 crate::ui::content_finder::cycle(main.finder_target_idx, delta, targets.len());
             main.finder.selected = 0;

@@ -16,8 +16,10 @@ pub fn copy_text(text: &str) -> OpResult {
             ("xclip", &["-selection", "clipboard"]),
             ("xsel", &["--clipboard", "--input"]),
         ];
-        let available: Vec<&(&str, &[&str])> =
-            candidates.iter().filter(|(cmd, _)| command_exists(cmd)).collect();
+        let available: Vec<&(&str, &[&str])> = candidates
+            .iter()
+            .filter(|(cmd, _)| command_exists(cmd))
+            .collect();
         if available.is_empty() {
             return Err("No clipboard utility found (tried wl-copy, xclip, xsel).".to_owned());
         }
@@ -54,7 +56,10 @@ pub fn copy_text(text: &str) -> OpResult {
         return Ok(());
     }
 
-    Err(format!("Clipboard copy is not supported on '{}'.", std::env::consts::OS))
+    Err(format!(
+        "Clipboard copy is not supported on '{}'.",
+        std::env::consts::OS
+    ))
 }
 
 fn run_with_input(command: &str, args: &[&str], input: &str) -> OpResult {
@@ -66,7 +71,9 @@ fn run_with_input(command: &str, args: &[&str], input: &str) -> OpResult {
         .spawn()
         .map_err(|e| e.to_string())?;
     if let Some(stdin) = child.stdin.as_mut() {
-        stdin.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
+        stdin
+            .write_all(input.as_bytes())
+            .map_err(|e| e.to_string())?;
     }
     let output = child.wait_with_output().map_err(|e| e.to_string())?;
     if !output.status.success() {

@@ -67,7 +67,9 @@ pub fn demo_course_sections(course_id: i64) -> Vec<CourseSection> {
                     name: "Syllabus".into(),
                     modname: Some("resource".into()),
                     description: Some("Course syllabus PDF".into()),
-                    url: Some(format!("https://demo.moodle.example/mod/resource/view.php?id={course_id}")),
+                    url: Some(format!(
+                        "https://demo.moodle.example/mod/resource/view.php?id={course_id}"
+                    )),
                     visible: Some(1),
                     contents: vec![ModuleContentItem {
                         kind: Some("file".into()),
@@ -82,7 +84,9 @@ pub fn demo_course_sections(course_id: i64) -> Vec<CourseSection> {
                     name: "Problem set 1".into(),
                     modname: Some("assign".into()),
                     description: Some("First problem set covering chapters 1-2.".into()),
-                    url: Some(format!("https://demo.moodle.example/mod/assign/view.php?id={course_id}")),
+                    url: Some(format!(
+                        "https://demo.moodle.example/mod/assign/view.php?id={course_id}"
+                    )),
                     visible: Some(1),
                     contents: vec![],
                 },
@@ -100,7 +104,9 @@ pub fn demo_course_sections(course_id: i64) -> Vec<CourseSection> {
                 name: "Discussion forum".into(),
                 modname: Some("forum".into()),
                 description: None,
-                url: Some(format!("https://demo.moodle.example/mod/forum/view.php?id={course_id}")),
+                url: Some(format!(
+                    "https://demo.moodle.example/mod/forum/view.php?id={course_id}"
+                )),
                 visible: Some(1),
                 contents: vec![],
             }],
