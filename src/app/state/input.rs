@@ -785,6 +785,20 @@ fn handle_quiz_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand>
         KeyCode::Right | KeyCode::PageDown => {
             move_quiz_question(modal, 1);
         }
+        KeyCode::Home => {
+            modal.selected_question = 0;
+            modal.selected_control = 0;
+            modal.selected_option = 0;
+            modal.editing_text = false;
+        }
+        KeyCode::End => {
+            if let Some(attempt) = &modal.attempt {
+                modal.selected_question = attempt.questions.len().saturating_sub(1);
+                modal.selected_control = 0;
+                modal.selected_option = 0;
+                modal.editing_text = false;
+            }
+        }
         KeyCode::Tab => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
                 modal.selected_control = modal.selected_control.saturating_sub(1);
@@ -823,6 +837,17 @@ fn handle_quiz_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand>
         }
         KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             modal.confirm_finish = true;
+        }
+        KeyCode::Char(ch) if ch.is_ascii_digit() && ch != '0' => {
+            let idx = (ch as u8 - b'1') as usize;
+            if let Some(attempt) = &modal.attempt {
+                if idx < attempt.questions.len() {
+                    modal.selected_question = idx;
+                    modal.selected_control = 0;
+                    modal.selected_option = 0;
+                    modal.editing_text = false;
+                }
+            }
         }
         KeyCode::Char(_) => {}
         _ => {}

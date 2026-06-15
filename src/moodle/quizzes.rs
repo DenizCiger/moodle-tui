@@ -214,6 +214,8 @@ mod tests {
                 quiz: 2,
                 state: "inprogress".into(),
                 currentpage: None,
+                timestart: None,
+                timefinish: None,
             },
             questions: vec![QuizQuestion {
                 slot: 1,

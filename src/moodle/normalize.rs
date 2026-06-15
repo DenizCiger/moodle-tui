@@ -453,6 +453,11 @@ pub fn normalize_quiz_attempt(value: &Value) -> Option<QuizAttempt> {
             .and_then(as_decoded)
             .unwrap_or_else(|| "inprogress".to_owned()),
         currentpage: attempt.get("currentpage").and_then(as_i64),
+        timestart: attempt
+            .get("timestart")
+            .or_else(|| attempt.get("timestarted"))
+            .and_then(as_i64),
+        timefinish: attempt.get("timefinish").and_then(as_i64),
     })
 }
 
@@ -568,7 +573,7 @@ mod tests {
     #[test]
     fn normalizes_quiz_question_controls() {
         let payload = json!({
-            "attempt": {"id": 5, "quiz": 9, "state": "inprogress"},
+            "attempt": {"id": 5, "quiz": 9, "state": "inprogress", "timestarted": 100, "timefinish": 200},
             "questions": [{
                 "slot": 1,
                 "questionnumber": "1",
@@ -578,6 +583,8 @@ mod tests {
         });
         let data = normalize_quiz_attempt_data(&payload).unwrap();
         assert_eq!(data.attempt.id, 5);
+        assert_eq!(data.attempt.timestart, Some(100));
+        assert_eq!(data.attempt.timefinish, Some(200));
         assert_eq!(data.questions[0].controls.len(), 2);
         assert!(!data.questions[0].unsupported);
         assert_eq!(data.questions[0].text, "Pick one");
