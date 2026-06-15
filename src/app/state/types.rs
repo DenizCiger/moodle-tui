@@ -3,6 +3,7 @@ use crate::models::{
     AssignmentDetail, AssignmentSubmissionStatus, Course, CourseSection, QuizAttemptData,
     QuizSummary, RuntimeConfig, SavedConfig, UpcomingAssignment,
 };
+use crate::plugins::PluginRegistry;
 
 #[derive(Debug, Clone, Default)]
 pub struct LoginState {
@@ -96,6 +97,7 @@ pub struct MainState {
     pub dashboard_focus: DashboardPane,
     pub assignment_list_by_course_id: std::collections::HashMap<i64, Vec<AssignmentDetail>>,
     pub quiz_list_by_course_id: std::collections::HashMap<i64, Vec<QuizSummary>>,
+    pub plugin_registry: PluginRegistry,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +251,7 @@ pub enum WorkerEvent {
         saved_config: Option<SavedConfig>,
         password: Option<String>,
         storage_warning: Option<String>,
+        plugin_registry: PluginRegistry,
     },
     LoginValidated(Result<RuntimeConfig, String>),
     DashboardLoaded(Result<(Vec<Course>, Vec<UpcomingAssignment>), String>),

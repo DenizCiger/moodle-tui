@@ -11,6 +11,13 @@ cargo run -- --demo  # offline demo data, no network, no disk writes
 ```
 
 Config & cache live in `~/.config/tui-moodle/` (override via `TUI_MOODLE_CONFIG_DIR`).
+
+Plugins live in `~/.config/tui-moodle/plugins/<plugin-id>/`. Each plugin directory
+contains a `plugin.json` manifest and an executable entry file. The current plugin
+runtime foundation discovers installed plugins, shows them in Settings, validates
+manifests, and defines a JSON-lines protocol for future plugin execution. The
+included `plugins/quiz-ai-extension` scaffold is limited to quiz study help and
+does not choose, fill, save, or submit quiz answers.
 The Rust port reads & writes the same JSON layout as the TS version, so existing creds carry over.
 
 ## Install (npm wrapper, after first GitHub release)

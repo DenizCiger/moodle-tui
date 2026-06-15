@@ -33,3 +33,28 @@ pub fn load_password(config: &SavedConfig) -> Result<Option<String>, StorageErro
 pub fn clear_password(config: &SavedConfig) -> Result<(), StorageError> {
     store()?.clear(&account_key(config))
 }
+
+pub fn save_plugin_secret(
+    plugin_id: &str,
+    secret_name: &str,
+    value: &str,
+) -> Result<(), StorageError> {
+    let key = crate::plugins::registry::plugin_secret_key(plugin_id, secret_name)
+        .map_err(StorageError::Message)?;
+    store()?.save(&key, value)
+}
+
+pub fn load_plugin_secret(
+    plugin_id: &str,
+    secret_name: &str,
+) -> Result<Option<String>, StorageError> {
+    let key = crate::plugins::registry::plugin_secret_key(plugin_id, secret_name)
+        .map_err(StorageError::Message)?;
+    store()?.load(&key)
+}
+
+pub fn clear_plugin_secret(plugin_id: &str, secret_name: &str) -> Result<(), StorageError> {
+    let key = crate::plugins::registry::plugin_secret_key(plugin_id, secret_name)
+        .map_err(StorageError::Message)?;
+    store()?.clear(&key)
+}

@@ -3,6 +3,7 @@ pub mod demo;
 pub mod models;
 pub mod moodle;
 pub mod platform;
+pub mod plugins;
 pub mod search;
 pub mod shortcuts;
 pub mod storage;

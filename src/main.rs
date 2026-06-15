@@ -122,6 +122,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                         saved_config: None,
                         password: None,
                         storage_warning: None,
+                        plugin_registry: Default::default(),
                     }));
                     return;
                 }
@@ -139,6 +140,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                     saved_config,
                     password,
                     storage_warning: warning,
+                    plugin_registry: moodle_tui::plugins::registry::load_registry(),
                 }));
             });
         }
@@ -418,6 +420,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                     saved_config,
                     password,
                     storage_warning,
+                    plugin_registry: moodle_tui::plugins::registry::load_registry(),
                 }));
             });
         }

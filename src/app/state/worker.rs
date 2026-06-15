@@ -14,7 +14,8 @@ impl AppState {
                 saved_config,
                 password,
                 storage_warning,
-            } => self.on_bootstrap(saved_config, password, storage_warning),
+                plugin_registry,
+            } => self.on_bootstrap(saved_config, password, storage_warning, plugin_registry),
             WorkerEvent::LoginValidated(result) => self.on_login_validated(result),
             WorkerEvent::DashboardLoaded(result) => {
                 if let Screen::MainShell(main) = &mut self.screen {
@@ -237,6 +238,7 @@ impl AppState {
         saved_config: Option<SavedConfig>,
         password: Option<String>,
         storage_warning: Option<String>,
+        plugin_registry: crate::plugins::PluginRegistry,
     ) -> Vec<AppCommand> {
         self.storage_warning = storage_warning.clone();
         self.saved_config = saved_config.clone();
@@ -256,6 +258,7 @@ impl AppState {
                 error: None,
                 from_cache: false,
             };
+            main.plugin_registry = plugin_registry;
             self.screen = Screen::MainShell(main);
             return Vec::new();
         }
@@ -305,6 +308,7 @@ impl AppState {
                 storage::session::set_auto_login(true);
                 let mut main = MainState::default();
                 main.config = Some(config.clone());
+                main.plugin_registry = crate::plugins::registry::load_registry();
                 main.dashboard.loading = true;
                 if let Some(cached) = storage::cache::get_cached_dashboard() {
                     main.dashboard.courses = cached.courses;
