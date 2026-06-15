@@ -7,7 +7,7 @@ use crate::models::RuntimeConfig;
 use crate::moodle::urls::{build_assignment_activity_url, build_course_view_url};
 use crate::shortcuts::is_shortcut_pressed;
 use crate::ui::course_tree::{CourseTreeNodeKind, CourseTreeRow, build_course_tree_rows};
-use crossterm::event::{KeyEvent, MouseEvent};
+use crossterm::event::KeyEvent;
 use tui_components::input::login::{
     LoginKeyBindings, LoginKeyOutcome, handle_login_key as handle_shared_login_key,
 };
@@ -19,10 +19,6 @@ impl AppState {
             Screen::Login(_) => handle_login_key(self, key),
             Screen::MainShell(_) => handle_main_key(self, key),
         }
-    }
-
-    pub fn handle_mouse(&mut self, _mouse: MouseEvent) -> Vec<AppCommand> {
-        Vec::new()
     }
 }
 
@@ -561,6 +557,7 @@ fn open_quiz_for_course_module(
         selected_question: 0,
         selected_control: 0,
         selected_option: 0,
+        editing_text: false,
     });
     if let Some(config) = main.config.clone() {
         return vec![AppCommand::LoadQuizDetail(config, course_id, quiz_id)];
@@ -685,13 +682,18 @@ fn handle_assignment_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCo
 }
 
 fn handle_quiz_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand> {
-    use crossterm::event::KeyCode;
-    if is_shortcut_pressed("assignment-modal-close", key) {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let modal_is_editing_text = main
+        .quiz_modal
+        .as_ref()
+        .is_some_and(|modal| modal.editing_text);
+    if is_shortcut_pressed("assignment-modal-close", key) && !modal_is_editing_text {
         main.quiz_modal = None;
         return Vec::new();
     }
-    if is_shortcut_pressed("dashboard-open-link", key)
-        || is_shortcut_pressed("dashboard-copy-link", key)
+    if !modal_is_editing_text
+        && (is_shortcut_pressed("dashboard-open-link", key)
+            || is_shortcut_pressed("dashboard-copy-link", key))
     {
         let action = if is_shortcut_pressed("dashboard-open-link", key) {
             LinkAction::Open
@@ -759,54 +761,109 @@ fn handle_quiz_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand>
         return Vec::new();
     }
 
+    if modal.editing_text {
+        match key.code {
+            KeyCode::Enter => modal.editing_text = false,
+            KeyCode::Esc => modal.editing_text = false,
+            KeyCode::Backspace => edit_selected_text(modal, None, true),
+            KeyCode::Char(ch) => edit_selected_text(modal, Some(ch), false),
+            _ => {}
+        }
+        return Vec::new();
+    }
+
     match key.code {
         KeyCode::Up => {
-            modal.selected_control = modal.selected_control.saturating_sub(1);
-            modal.selected_option = 0;
+            move_quiz_selection(modal, -1);
         }
         KeyCode::Down => {
-            let max = current_question_controls(modal).saturating_sub(1);
-            modal.selected_control = (modal.selected_control + 1).min(max);
+            move_quiz_selection(modal, 1);
+        }
+        KeyCode::Left | KeyCode::PageUp => {
+            move_quiz_question(modal, -1);
+        }
+        KeyCode::Right | KeyCode::PageDown => {
+            move_quiz_question(modal, 1);
+        }
+        KeyCode::Tab => {
+            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                modal.selected_control = modal.selected_control.saturating_sub(1);
+            } else {
+                let max = current_question_controls(modal).saturating_sub(1);
+                modal.selected_control = (modal.selected_control + 1).min(max);
+            }
             modal.selected_option = 0;
+            modal.editing_text = false;
         }
-        KeyCode::Left => {
-            modal.selected_option = modal.selected_option.saturating_sub(1);
-        }
-        KeyCode::Right => {
-            let max = current_control_options(modal).saturating_sub(1);
-            modal.selected_option = (modal.selected_option + 1).min(max);
-        }
-        KeyCode::PageUp => {
-            modal.selected_question = modal.selected_question.saturating_sub(1);
-            modal.selected_control = 0;
-            modal.selected_option = 0;
-        }
-        KeyCode::PageDown => {
-            let max = modal
-                .attempt
-                .as_ref()
-                .map(|a| a.questions.len().saturating_sub(1))
-                .unwrap_or(0);
-            modal.selected_question = (modal.selected_question + 1).min(max);
-            modal.selected_control = 0;
-            modal.selected_option = 0;
+        KeyCode::Enter => {
+            if selected_control_is_text(modal) {
+                modal.editing_text = true;
+            } else {
+                toggle_selected_option(modal);
+            }
         }
         KeyCode::Char(' ') => toggle_selected_option(modal),
-        KeyCode::Backspace => edit_selected_text(modal, None, true),
-        KeyCode::Char('s') => {
+        KeyCode::Backspace => {}
+        KeyCode::F(2) => {
             modal.saving = true;
             modal.error = None;
             if let (Some(config), Some(attempt)) = (main.config.clone(), modal.attempt.clone()) {
                 return vec![AppCommand::SaveQuizAttempt(config, attempt)];
             }
         }
-        KeyCode::Char('F') => {
+        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            modal.saving = true;
+            modal.error = None;
+            if let (Some(config), Some(attempt)) = (main.config.clone(), modal.attempt.clone()) {
+                return vec![AppCommand::SaveQuizAttempt(config, attempt)];
+            }
+        }
+        KeyCode::F(10) => {
             modal.confirm_finish = true;
         }
-        KeyCode::Char(ch) => edit_selected_text(modal, Some(ch), false),
+        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            modal.confirm_finish = true;
+        }
+        KeyCode::Char(_) => {}
         _ => {}
     }
     Vec::new()
+}
+
+fn move_quiz_question(modal: &mut QuizModalData, delta: isize) {
+    let max = modal
+        .attempt
+        .as_ref()
+        .map(|a| a.questions.len().saturating_sub(1))
+        .unwrap_or(0);
+    if delta < 0 {
+        modal.selected_question = modal.selected_question.saturating_sub(delta.unsigned_abs());
+    } else {
+        modal.selected_question = (modal.selected_question + delta as usize).min(max);
+    }
+    modal.selected_control = 0;
+    modal.selected_option = 0;
+    modal.editing_text = false;
+}
+
+fn move_quiz_selection(modal: &mut QuizModalData, delta: isize) {
+    let option_count = current_control_options(modal);
+    if option_count > 0 {
+        if delta < 0 {
+            modal.selected_option = modal.selected_option.saturating_sub(delta.unsigned_abs());
+        } else {
+            modal.selected_option = (modal.selected_option + delta as usize).min(option_count - 1);
+        }
+        return;
+    }
+    if delta < 0 {
+        modal.selected_control = modal.selected_control.saturating_sub(delta.unsigned_abs());
+    } else {
+        let max = current_question_controls(modal).saturating_sub(1);
+        modal.selected_control = (modal.selected_control + delta as usize).min(max);
+    }
+    modal.selected_option = 0;
+    modal.editing_text = false;
 }
 
 fn current_question_controls(modal: &QuizModalData) -> usize {
@@ -827,6 +884,12 @@ fn current_control_options(modal: &QuizModalData) -> usize {
     selected_control(modal)
         .map(|(_, control)| control.options.len())
         .unwrap_or(0)
+}
+
+fn selected_control_is_text(modal: &QuizModalData) -> bool {
+    selected_control(modal)
+        .map(|(_, control)| control.kind == QuizAnswerKind::Text)
+        .unwrap_or(false)
 }
 
 fn selected_control(modal: &QuizModalData) -> Option<(usize, &crate::models::QuizAnswerControl)> {

@@ -3,8 +3,8 @@ use crate::models::{
     ModuleContentItem, QuizAttempt, QuizAttemptData, QuizQuestion, QuizSummary, QuizWarning,
     UpcomingAssignment,
 };
-use crate::moodle::html::{decode_html_entities, strip_html};
-use crate::moodle::quiz_html::parse_question_controls;
+use crate::moodle::html::decode_html_entities;
+use crate::moodle::quiz_html::{parse_question_controls, question_text_from_html};
 use serde_json::Value;
 
 pub fn as_str(value: &Value) -> Option<String> {
@@ -519,7 +519,7 @@ fn normalize_quiz_question(value: &Value) -> Option<QuizQuestion> {
             .get("name")
             .and_then(as_decoded)
             .unwrap_or_else(|| format!("Question {slot}")),
-        text: strip_html(&html),
+        text: question_text_from_html(&html),
         html,
         controls,
         unsupported,
@@ -580,5 +580,6 @@ mod tests {
         assert_eq!(data.attempt.id, 5);
         assert_eq!(data.questions[0].controls.len(), 2);
         assert!(!data.questions[0].unsupported);
+        assert_eq!(data.questions[0].text, "Pick one");
     }
 }

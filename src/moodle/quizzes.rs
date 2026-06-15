@@ -106,7 +106,11 @@ pub async fn fetch_attempt_data(
         if next < 0 {
             break;
         }
-        let next_payload = fetch_attempt_page(client, config, token, attempt_id, next).await?;
+        let next_payload = match fetch_attempt_page(client, config, token, attempt_id, next).await {
+            Ok(payload) => payload,
+            Err(error) if next > 0 && is_invalid_quiz_page_error(&error) => break,
+            Err(error) => return Err(error),
+        };
         let next_questions = next_payload
             .get("questions")
             .and_then(Value::as_array)
@@ -119,6 +123,13 @@ pub async fn fetch_attempt_data(
     }
     normalize_quiz_attempt_data(&payload)
         .ok_or_else(|| MoodleError::message("Unexpected Moodle response for quiz attempt data"))
+}
+
+fn is_invalid_quiz_page_error(error: &MoodleError) -> bool {
+    match error {
+        MoodleError::Message(message) => message.contains("Invalid page number"),
+        MoodleError::Http(_) => false,
+    }
 }
 
 async fn fetch_attempt_page(

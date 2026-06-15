@@ -158,6 +158,7 @@ pub struct QuizModalData {
     pub selected_question: usize,
     pub selected_control: usize,
     pub selected_option: usize,
+    pub editing_text: bool,
 }
 
 #[derive(Debug, Clone, Default)]

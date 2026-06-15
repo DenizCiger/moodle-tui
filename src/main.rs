@@ -1,7 +1,4 @@
-use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event as CrosstermEvent, KeyEvent, KeyEventKind,
-    MouseEvent,
-};
+use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -18,7 +15,6 @@ use tokio::sync::mpsc;
 #[derive(Debug)]
 enum RuntimeEvent {
     Key(KeyEvent),
-    Mouse(MouseEvent),
     Resize(u16, u16),
     Worker(WorkerEvent),
 }
@@ -27,7 +23,7 @@ enum RuntimeEvent {
 async fn main() -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -35,11 +31,7 @@ async fn main() -> io::Result<()> {
     let result = run_app(&mut terminal).await;
 
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
     result
 }
@@ -69,7 +61,6 @@ async fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::R
             Some(event) = rx.recv() => {
                 let commands = match event {
                     RuntimeEvent::Key(key) => state.handle_key(key),
-                    RuntimeEvent::Mouse(mouse) => state.handle_mouse(mouse),
                     RuntimeEvent::Resize(width, height) => { state.update_terminal_size(width, height); Vec::new() }
                     RuntimeEvent::Worker(event) => state.handle_worker_event(event),
                 };
@@ -111,9 +102,7 @@ fn spawn_input_thread(tx: mpsc::UnboundedSender<RuntimeEvent>) {
                         let _ = tx.send(RuntimeEvent::Key(key));
                     }
                 }
-                Ok(CrosstermEvent::Mouse(mouse)) => {
-                    let _ = tx.send(RuntimeEvent::Mouse(mouse));
-                }
+                Ok(CrosstermEvent::Mouse(_)) => {}
                 Ok(CrosstermEvent::Resize(w, h)) => {
                     let _ = tx.send(RuntimeEvent::Resize(w, h));
                 }

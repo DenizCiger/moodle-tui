@@ -258,6 +258,8 @@ pub enum QuizAnswerKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QuizAnswerOption {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub name: Option<String>,
     pub label: String,
     pub value: String,
     pub selected: bool,

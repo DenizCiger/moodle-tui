@@ -195,11 +195,39 @@ function save_question(string $qtype, stdClass $form): stdClass {
     return reset($records);
 }
 
-function add_questions(stdClass $quiz, stdClass $course): void {
+function ensure_question(string $qtype, stdClass $form): stdClass {
     global $DB;
-    if ($DB->record_exists('quiz_slots', ['quizid' => $quiz->id])) {
-        return;
+    $existing = $DB->get_records('question', ['name' => $form->name], 'id DESC', '*', 0, 1);
+    if ($existing) {
+        return reset($existing);
     }
+    return save_question($qtype, $form);
+}
+
+function recreate_question(string $qtype, stdClass $form): stdClass {
+    global $DB;
+    $existing = $DB->get_records('question', ['name' => $form->name], 'id DESC', '*', 0, 0);
+    foreach ($existing as $question) {
+        question_delete_question($question->id);
+    }
+    return save_question($qtype, $form);
+}
+
+function clear_quiz_questions(stdClass $quiz): void {
+    global $DB;
+    $slots = $DB->get_records('quiz_slots', ['quizid' => $quiz->id], '', 'id');
+    foreach ($slots as $slot) {
+        $DB->delete_records('question_references', [
+            'component' => 'mod_quiz',
+            'questionarea' => 'slot',
+            'itemid' => $slot->id,
+        ]);
+    }
+    $DB->delete_records('quiz_slots', ['quizid' => $quiz->id]);
+    $DB->delete_records('quiz_sections', ['quizid' => $quiz->id]);
+}
+
+function add_questions(stdClass $quiz, stdClass $course): void {
     $category = create_question_category($course);
     $common = [
         'category' => $category->id . ',' . $category->contextid,
@@ -216,7 +244,34 @@ function add_questions(stdClass $quiz, stdClass $course): void {
         'feedbacktrue' => ['text' => 'Correct.', 'format' => FORMAT_HTML],
         'feedbackfalse' => ['text' => 'Try again.', 'format' => FORMAT_HTML],
     ]);
-    $tfq = save_question('truefalse', $tf);
+    $tfq = ensure_question('truefalse', $tf);
+
+    $mc = (object)array_merge($common, [
+        'name' => 'TUI Multiple Choice',
+        'questiontext' => ['text' => 'Which Moodle activities can this local TUI harness test?', 'format' => FORMAT_HTML],
+        'single' => 0,
+        'shuffleanswers' => 1,
+        'answernumbering' => 'abc',
+        'showstandardinstruction' => 0,
+        'noanswers' => 3,
+        'numhints' => 0,
+        'answer' => [
+            ['text' => 'Assignment', 'format' => FORMAT_PLAIN],
+            ['text' => 'Quiz', 'format' => FORMAT_PLAIN],
+            ['text' => 'Short answer', 'format' => FORMAT_PLAIN],
+        ],
+        'fraction' => ['0.0', '0.5', '0.5'],
+        'feedback' => [
+            ['text' => 'Assignments are separate from this flow.', 'format' => FORMAT_HTML],
+            ['text' => 'Correct.', 'format' => FORMAT_HTML],
+            ['text' => 'Correct.', 'format' => FORMAT_HTML],
+        ],
+        'correctfeedback' => ['text' => 'Correct.', 'format' => FORMAT_HTML],
+        'partiallycorrectfeedback' => ['text' => 'One correct option is still missing.', 'format' => FORMAT_HTML],
+        'incorrectfeedback' => ['text' => 'Quiz and short answer are covered by this harness.', 'format' => FORMAT_HTML],
+        'shownumcorrect' => 0,
+    ]);
+    $mcq = recreate_question('multichoice', $mc);
 
     $sa = (object)array_merge($common, [
         'name' => 'TUI Short Answer',
@@ -226,7 +281,7 @@ function add_questions(stdClass $quiz, stdClass $course): void {
         'fraction' => [1],
         'feedback' => [['text' => 'Expected moodle-tui.', 'format' => FORMAT_HTML]],
     ]);
-    $saq = save_question('shortanswer', $sa);
+    $saq = ensure_question('shortanswer', $sa);
 
     $num = (object)array_merge($common, [
         'name' => 'TUI Numerical',
@@ -243,12 +298,39 @@ function add_questions(stdClass $quiz, stdClass $course): void {
         'unit' => [],
         'multiplier' => [],
     ]);
-    $numq = save_question('numerical', $num);
+    $numq = ensure_question('numerical', $num);
 
-    foreach ([$tfq, $saq, $numq] as $question) {
+    clear_quiz_questions($quiz);
+    foreach ([$tfq, $saq, $numq, $mcq] as $question) {
         quiz_add_quiz_question($question->id, $quiz, 0, 1);
     }
+    global $DB;
+    if (!$DB->record_exists('quiz_sections', ['quizid' => $quiz->id, 'firstslot' => 1])) {
+        $DB->insert_record('quiz_sections', (object)[
+            'quizid' => $quiz->id,
+            'firstslot' => 1,
+            'heading' => '',
+            'shufflequestions' => 0,
+        ]);
+    }
     quiz_update_sumgrades($quiz);
+}
+
+function reset_student_quiz_attempts(stdClass $quiz, stdClass $student): void {
+    global $DB;
+    $quiz->cmid = $quiz->cmid ?? $DB->get_field('course_modules', 'id', [
+        'course' => $quiz->course,
+        'module' => $DB->get_field('modules', 'id', ['name' => 'quiz']),
+        'instance' => $quiz->id,
+    ], MUST_EXIST);
+    $attempts = $DB->get_records('quiz_attempts', [
+        'quiz' => $quiz->id,
+        'userid' => $student->id,
+        'preview' => 0,
+    ]);
+    foreach ($attempts as $attempt) {
+        quiz_delete_attempt($attempt, $quiz);
+    }
 }
 
 ensure_mobile_access();
@@ -257,6 +339,7 @@ $course = ensure_course();
 ensure_enrolment($course, $student);
 $quiz = ensure_quiz($course);
 add_questions($quiz, $course);
+reset_student_quiz_attempts($quiz, $student);
 
 $trace->output('Local Moodle quiz seed complete.');
 $trace->output('URL: http://localhost:8080');

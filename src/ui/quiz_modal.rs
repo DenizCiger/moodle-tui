@@ -115,9 +115,11 @@ pub fn render(frame: &mut Frame, modal: &QuizModalData) {
                     let marker = if selected_control { ">" } else { " " };
                     lines.push(Line::from(vec![
                         Span::styled(marker, Style::default().fg(theme::BRAND)),
-                        Span::raw(" "),
-                        Span::styled(&control.name, Style::default().fg(theme::NEUTRAL_GRAY)),
-                        Span::raw(": "),
+                        Span::raw(if modal.editing_text {
+                            " Answer (editing): "
+                        } else {
+                            " Answer: "
+                        }),
                         Span::styled(
                             if control.value.is_empty() {
                                 "(empty)"
@@ -136,8 +138,7 @@ pub fn render(frame: &mut Frame, modal: &QuizModalData) {
                     let marker = if selected_control { ">" } else { " " };
                     lines.push(Line::from(vec![
                         Span::styled(marker, Style::default().fg(theme::BRAND)),
-                        Span::raw(" "),
-                        Span::styled(&control.name, Style::default().fg(theme::NEUTRAL_GRAY)),
+                        Span::raw(" Answer"),
                     ]));
                     for (option_idx, option) in control.options.iter().enumerate() {
                         let picked = selected_control && option_idx == modal.selected_option;
@@ -195,7 +196,7 @@ fn status_text(modal: &QuizModalData) -> String {
 
 fn footer_line() -> Line<'static> {
     Line::from(Span::styled(
-        "PgUp/PgDn question · Up/Down field · Left/Right option · Space toggle · s save · F finish · Shift+C browser · Esc close",
+        "Left/Right question · Tab field · Up/Down option · Space select · Enter edit/apply · F2 save · F10 finish · Esc close",
         Style::default().fg(theme::NEUTRAL_GRAY),
     ))
 }
