@@ -47,15 +47,34 @@ pub fn discover_plugins() -> Result<PluginRegistry, StorageError> {
     if let Ok(entries) = fs::read_dir(&root) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_dir() {
+            if !path.is_dir() || should_skip_plugin_dir(&path) {
                 continue;
             }
-            plugins.push(load_plugin_dir(&path, &state.enabled));
+            let plugin = load_plugin_dir(&path, &state.enabled);
+            if plugins
+                .iter()
+                .any(|existing: &InstalledPlugin| existing.manifest.id == plugin.manifest.id)
+            {
+                continue;
+            }
+            plugins.push(plugin);
         }
     }
 
     plugins.sort_by(|left, right| left.manifest.id.cmp(&right.manifest.id));
     Ok(PluginRegistry { plugins })
+}
+
+fn should_skip_plugin_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(|name| {
+            name.starts_with('.')
+                || name.contains(".backup")
+                || name.ends_with(".bak")
+                || name.ends_with(".old")
+        })
+        .unwrap_or(false)
 }
 
 pub fn save_enabled_state(registry: &PluginRegistry) -> Result<(), StorageError> {
@@ -101,13 +120,28 @@ fn install_plugin_from_dir_to(
     }
     fs::create_dir_all(destination_root)
         .map_err(|error| format!("failed to create plugin directory: {error}"))?;
-    copy_dir(source, &destination)?;
+    link_dir(source, &destination)?;
     Ok(InstalledPlugin {
         manifest,
         directory: destination,
         enabled: true,
         load_error: None,
     })
+}
+
+pub fn uninstall_plugin(plugin_id: &str) -> Result<(), String> {
+    validate_plugin_id(plugin_id)?;
+    let root =
+        plugins_dir().map_err(|error| format!("failed to locate plugin directory: {error}"))?;
+    let destination = root.join(plugin_id);
+    if destination.exists() {
+        fs::remove_dir_all(&destination)
+            .map_err(|error| format!("failed to remove installed plugin: {error}"))?;
+    }
+    let mut state = read_state();
+    state.enabled.remove(plugin_id);
+    write_json_pretty(registry_file().map_err(|error| error.to_string())?, &state)
+        .map_err(|error| format!("failed to update plugin state: {error}"))
 }
 
 pub fn plugin_secret_key(plugin_id: &str, secret_name: &str) -> Result<String, String> {
@@ -181,28 +215,32 @@ fn sanitize_fallback_id(raw: &str) -> String {
     out
 }
 
-fn copy_dir(source: &Path, destination: &Path) -> Result<(), String> {
-    fs::create_dir_all(destination)
-        .map_err(|error| format!("failed to create {}: {error}", destination.display()))?;
-    for entry in fs::read_dir(source)
-        .map_err(|error| format!("failed to read {}: {error}", source.display()))?
-    {
-        let entry = entry.map_err(|error| format!("failed to read plugin entry: {error}"))?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        if source_path.is_dir() {
-            copy_dir(&source_path, &destination_path)?;
-        } else if source_path.is_file() {
-            fs::copy(&source_path, &destination_path).map_err(|error| {
-                format!(
-                    "failed to copy {} to {}: {error}",
-                    source_path.display(),
-                    destination_path.display()
-                )
-            })?;
-        }
+#[cfg(windows)]
+fn link_dir(source: &Path, destination: &Path) -> Result<(), String> {
+    let source = source
+        .canonicalize()
+        .map_err(|error| format!("failed to resolve plugin source: {error}"))?;
+    let status = std::process::Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            &destination.to_string_lossy(),
+            &source.to_string_lossy(),
+        ])
+        .status()
+        .map_err(|error| format!("failed to create plugin junction: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("failed to create plugin junction: {status}"))
     }
-    Ok(())
+}
+
+#[cfg(unix)]
+fn link_dir(source: &Path, destination: &Path) -> Result<(), String> {
+    std::os::unix::fs::symlink(source, destination)
+        .map_err(|error| format!("failed to create plugin symlink: {error}"))
 }
 
 pub fn installed_plugin_ids(registry: &PluginRegistry) -> HashSet<String> {
@@ -270,5 +308,14 @@ mod tests {
         assert_eq!(installed.manifest.id, "quiz-ai-extension");
         assert!(plugins.join("quiz-ai-extension/plugin.json").exists());
         assert!(plugins.join("quiz-ai-extension/plugin.js").exists());
+    }
+
+    #[test]
+    fn skips_backup_plugin_directories() {
+        assert!(should_skip_plugin_dir(Path::new(
+            "quiz-ai-extension.backup-20260617"
+        )));
+        assert!(should_skip_plugin_dir(Path::new(".disabled")));
+        assert!(!should_skip_plugin_dir(Path::new("quiz-ai-extension")));
     }
 }

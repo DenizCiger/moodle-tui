@@ -4,6 +4,8 @@ use crate::models::{
     QuizSummary, RuntimeConfig, SavedConfig, UpcomingAssignment,
 };
 use crate::plugins::PluginRegistry;
+use crate::plugins::protocol::QuizQuestionContext;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default)]
 pub struct LoginState {
@@ -78,6 +80,61 @@ pub enum CourseView {
     Course(CoursePageData),
 }
 
+#[derive(Debug, Clone)]
+pub struct PluginApiKeyConfig {
+    pub input: TextInputState,
+    pub plugin_id: String,
+    pub setting_name: String,
+    pub secret: bool,
+    pub saving: bool,
+    pub error: Option<String>,
+    pub title: String,
+    pub current_value: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginModelPickerConfig {
+    pub plugin_id: String,
+    pub setting_name: String,
+    pub secret: bool,
+    pub title: String,
+    pub options: Vec<String>,
+    pub selected: usize,
+    pub saving: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginInstallConfig {
+    pub input: TextInputState,
+    pub saving: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SettingsPane {
+    #[default]
+    Keybinds,
+    Config,
+}
+
+impl SettingsPane {
+    pub fn toggle(self) -> Self {
+        match self {
+            SettingsPane::Keybinds => SettingsPane::Config,
+            SettingsPane::Config => SettingsPane::Keybinds,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SettingsPaneState {
+    pub cursor: usize,
+    pub scroll: u16,
+    pub search_query: String,
+    pub search_active: bool,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct MainState {
     pub config: Option<RuntimeConfig>,
@@ -85,11 +142,16 @@ pub struct MainState {
     pub view: CourseView,
     pub selected_row: usize,
     pub settings_open: bool,
-    pub settings_scroll: u16,
+    pub settings_active_pane: SettingsPane,
+    pub settings_keybinds: SettingsPaneState,
+    pub settings_config: SettingsPaneState,
     pub assignment_modal: Option<AssignmentModalData>,
     pub quiz_modal: Option<QuizModalData>,
     pub course_finder_open: bool,
     pub content_finder_open: bool,
+    pub api_key_input: Option<PluginApiKeyConfig>,
+    pub model_picker: Option<PluginModelPickerConfig>,
+    pub plugin_install_input: Option<PluginInstallConfig>,
     pub finder: SearchModalState,
     pub finder_target_idx: usize,
     pub toast: Option<String>,
@@ -98,6 +160,9 @@ pub struct MainState {
     pub assignment_list_by_course_id: std::collections::HashMap<i64, Vec<AssignmentDetail>>,
     pub quiz_list_by_course_id: std::collections::HashMap<i64, Vec<QuizSummary>>,
     pub plugin_registry: PluginRegistry,
+    pub plugin_settings:
+        std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub plugin_secret_configured: std::collections::HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,6 +220,7 @@ pub struct QuizModalData {
     pub loading: bool,
     pub saving: bool,
     pub finishing: bool,
+    pub ai_filling: bool,
     pub confirm_finish: bool,
     pub error: Option<String>,
     pub selected_question: usize,
@@ -236,6 +302,21 @@ pub enum AppCommand {
         course_id: i64,
         action: LinkAction,
     },
+    InvokePluginQuizAction {
+        plugin: crate::plugins::InstalledPlugin,
+        action_id: String,
+        result_kind: Option<String>,
+        question_context: QuizQuestionContext,
+    },
+    SavePluginSetting {
+        plugin_id: String,
+        setting_name: String,
+        secret: bool,
+        value: String,
+    },
+    InstallPluginFromDir(PathBuf),
+    UninstallPlugin(String),
+    ReloadPlugins,
     Logout {
         saved_config: Option<SavedConfig>,
         password: Option<String>,
@@ -288,6 +369,19 @@ pub enum WorkerEvent {
         attempt_id: i64,
         result: Result<(), String>,
     },
+    PluginQuizActionResult {
+        plugin_id: String,
+        action_title: String,
+        result_kind: Option<String>,
+        result: Result<crate::plugins::AiFillResponse, String>,
+    },
+    PluginSettingSaved {
+        plugin_id: String,
+        setting_name: String,
+        secret: bool,
+        result: Result<(), String>,
+    },
+    PluginRegistryChanged(Result<PluginRegistry, String>),
     Toast(String),
     ToastExpire(u64),
     AssignmentListLoaded {

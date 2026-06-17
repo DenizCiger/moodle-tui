@@ -206,6 +206,16 @@ fn render_question(frame: &mut Frame, area: Rect, modal: &QuizModalData) {
         )));
     }
 
+    if let Some(error) = &modal.error {
+        lines.push(Line::from(""));
+        for line in error.lines() {
+            lines.push(Line::from(Span::styled(
+                format!(" ERROR: {line}"),
+                Style::default().fg(theme::ERROR),
+            )));
+        }
+    }
+
     frame.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }),
         inset(area, 1, 0),
@@ -282,6 +292,8 @@ fn render_attempt_footer(frame: &mut Frame, area: Rect, modal: &QuizModalData) {
     }
     let hint = if area.width >= 96 {
         "Left/Right question · Tab field · Up/Down option · Space select · Enter edit · F2 save · F10 finish"
+    } else if area.width >= 96 {
+        "Left/Right question · Tab field · Up/Down option · Space select · Enter edit · F2 save · F10 finish"
     } else if area.width >= 72 {
         "←/→ question · Tab field · ↑/↓ option · Space select · F2 save · F10 finish"
     } else {
@@ -334,6 +346,8 @@ fn status_text(modal: &QuizModalData) -> String {
         "saving".into()
     } else if modal.finishing {
         "finishing".into()
+    } else if modal.ai_filling {
+        "AI filling...".into()
     } else if let Some(attempt) = &modal.attempt {
         format!("attempt #{} {}", attempt.attempt.id, attempt.attempt.state)
     } else {
@@ -556,6 +570,7 @@ mod tests {
             loading: false,
             saving: false,
             finishing: false,
+            ai_filling: false,
             confirm_finish: false,
             error: None,
             selected_question: 0,

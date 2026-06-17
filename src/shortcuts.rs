@@ -40,6 +40,38 @@ pub fn is_shortcut_pressed(id: &str, key: KeyEvent) -> bool {
     }
 }
 
+pub fn is_key_label_pressed(label: &str, key: KeyEvent) -> bool {
+    let normalized = label.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "enter" => key.code == KeyCode::Enter,
+        "esc" | "escape" => key.code == KeyCode::Esc,
+        "tab" => key.code == KeyCode::Tab,
+        "backtab" | "shift+tab" => key.code == KeyCode::BackTab,
+        "up" => key.code == KeyCode::Up,
+        "down" => key.code == KeyCode::Down,
+        "left" => key.code == KeyCode::Left,
+        "right" => key.code == KeyCode::Right,
+        "pageup" => key.code == KeyCode::PageUp,
+        "pagedown" => key.code == KeyCode::PageDown,
+        "home" => key.code == KeyCode::Home,
+        "end" => key.code == KeyCode::End,
+        value if value.starts_with('f') => value
+            .strip_prefix('f')
+            .and_then(|n| n.parse::<u8>().ok())
+            .is_some_and(|n| key.code == KeyCode::F(n)),
+        value if value.len() == 1 => value.chars().next().is_some_and(|ch| plain_char(key, ch)),
+        _ => false,
+    }
+}
+
+pub fn core_key_conflicts(label: &str) -> bool {
+    let sections = get_shortcut_sections(TabId::Dashboard);
+    sections
+        .iter()
+        .flat_map(|section| section.items.iter())
+        .any(|item| item.keys == label)
+}
+
 fn pick(ids: &[&'static str]) -> Vec<ShortcutDisplay> {
     ids.iter()
         .map(|id| match *id {

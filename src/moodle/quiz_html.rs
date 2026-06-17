@@ -82,6 +82,7 @@ pub fn parse_question_controls(html: &str) -> Vec<QuizAnswerControl> {
         });
     }
     controls.extend(parse_selects(html));
+    controls.extend(parse_textareas(html));
     controls
 }
 
@@ -223,6 +224,34 @@ fn parse_selects(html: &str) -> Vec<QuizAnswerControl> {
             value: String::new(),
         });
         offset = close + "</select>".len();
+    }
+    out
+}
+
+fn parse_textareas(html: &str) -> Vec<QuizAnswerControl> {
+    let mut out = Vec::new();
+    let mut offset = 0usize;
+    let lower = html.to_ascii_lowercase();
+    while let Some(start_rel) = lower[offset..].find("<textarea") {
+        let start = offset + start_rel;
+        let Some(open_end_rel) = lower[start..].find('>') else {
+            break;
+        };
+        let open_end = start + open_end_rel + 1;
+        let Some(close_rel) = lower[open_end..].find("</textarea>") else {
+            break;
+        };
+        let close = open_end + close_rel;
+        let attrs = parse_attrs(&html[start..open_end]);
+        if let Some(name) = attrs.get("name").cloned().filter(|s| !s.is_empty()) {
+            out.push(QuizAnswerControl {
+                name,
+                kind: QuizAnswerKind::Text,
+                options: Vec::new(),
+                value: strip_html(&html[open_end..close]),
+            });
+        }
+        offset = close + "</textarea>".len();
     }
     out
 }
@@ -433,6 +462,19 @@ mod tests {
             build_answer_params(&controls),
             vec![("a".into(), "42".into())]
         );
+    }
+
+    #[test]
+    fn parses_textarea_controls() {
+        let controls = parse_question_controls(
+            r#"<div class="qtext">Explain.</div><textarea name="q4:1_answer">old</textarea>"#,
+        );
+        let text = controls
+            .iter()
+            .find(|control| control.kind == QuizAnswerKind::Text)
+            .unwrap();
+        assert_eq!(text.name, "q4:1_answer");
+        assert_eq!(text.value, "old");
     }
 
     #[test]

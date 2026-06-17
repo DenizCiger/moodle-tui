@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod config;
+pub mod plugin_settings;
 pub mod secret;
 pub mod session;
 

@@ -37,10 +37,19 @@ pub struct QuizQuestionContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuizOptionContext {
+    pub label: String,
+    pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QuizControlContext {
+    pub name: String,
     pub kind: String,
     #[serde(default)]
-    pub options: Vec<String>,
+    pub options: Vec<QuizOptionContext>,
     #[serde(default)]
     pub current_text: Option<String>,
 }
@@ -89,12 +98,28 @@ pub enum StudyHelpConfidence {
     High,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AiFillResponse {
+    pub answers: Vec<ControlAnswer>,
+    pub explanation: String,
+    pub confidence: StudyHelpConfidence,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ControlAnswer {
+    pub control_name: String,
+    #[serde(default)]
+    pub selected_values: Vec<String>,
+    #[serde(default)]
+    pub text_value: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn serializes_quiz_context_without_submission_names() {
+    fn serializes_quiz_context_with_control_names() {
         let context = QuizQuestionContext {
             quiz_id: 1,
             attempt_id: 2,
@@ -103,8 +128,20 @@ mod tests {
             question_number: Some("1".into()),
             question_text: "Pick the stylesheet language.".into(),
             controls: vec![QuizControlContext {
+                name: "q1:1_answer".into(),
                 kind: "single_choice".into(),
-                options: vec!["HTML".into(), "CSS".into()],
+                options: vec![
+                    QuizOptionContext {
+                        label: "HTML".into(),
+                        value: "0".into(),
+                        name: None,
+                    },
+                    QuizOptionContext {
+                        label: "CSS".into(),
+                        value: "1".into(),
+                        name: None,
+                    },
+                ],
                 current_text: None,
             }],
         };
@@ -114,7 +151,22 @@ mod tests {
         .unwrap();
         assert!(json.contains("stylesheet language"));
         assert!(json.contains("CSS"));
-        assert!(!json.contains("q1:1_answer"));
+        assert!(json.contains("q1:1_answer"));
+    }
+    #[test]
+    fn parses_ai_fill_response() {
+        let response: AiFillResponse = serde_json::from_str(
+            r#"{
+              "answers": [{"control_name": "q1:1_answer", "selected_values": ["1"]}],
+              "explanation": "CSS is the correct answer for styling.",
+              "confidence": "high"
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(response.answers.len(), 1);
+        assert_eq!(response.answers[0].control_name, "q1:1_answer");
+        assert_eq!(response.answers[0].selected_values, vec!["1"]);
+        assert_eq!(response.confidence, StudyHelpConfidence::High);
     }
 
     #[test]

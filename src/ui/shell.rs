@@ -1,12 +1,13 @@
 use crate::app::state::AppState;
-use crate::app::state::types::{CourseView, MainState};
+use crate::app::state::types::CourseView;
+use crate::app::state::types::MainState;
 use crate::ui::{assignment_modal, course_tree, dashboard, quiz_modal, settings, theme};
 use chrono::TimeZone;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use tui_components::ui::search::{
     SearchModal, SearchModalCategory, SearchModalRow, highlight_spans,
 };
@@ -31,10 +32,6 @@ pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
 
     render_footer(frame, layout[2], main);
 
-    if main.settings_open {
-        settings::render(frame, state);
-    }
-
     if let Some(modal) = &main.assignment_modal {
         assignment_modal::render(frame, modal);
     }
@@ -45,6 +42,14 @@ pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     if main.course_finder_open || main.content_finder_open {
         render_finder(frame, main);
     }
+
+    if main.settings_open {
+        settings::render(frame, state);
+    }
+
+    render_api_key_input(frame, main);
+    render_model_picker(frame, main);
+    render_plugin_install_input(frame, main);
 
     if let Some(toast) = &main.toast {
         render_toast(frame, toast);
@@ -263,6 +268,186 @@ fn render_toast(frame: &mut Frame, message: &str) {
         ))),
         toast_area,
     );
+}
+
+fn render_api_key_input(frame: &mut Frame, main: &MainState) {
+    let Some(input) = &main.api_key_input else {
+        return;
+    };
+    let area = frame.area();
+    let width = area.width.min(60);
+    let height = 7;
+    let x = area.x + (area.width - width) / 2;
+    let y = area.y + (area.height - height) / 2;
+    let rect = ratatui::layout::Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(input.title.clone())
+        .border_style(Style::default().fg(theme::BRAND));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+    let is_secret = input.secret;
+    let display = if input.input.value.is_empty() {
+        if is_secret {
+            "(paste or type secret value)".to_string()
+        } else {
+            format!("({})", input.current_value)
+        }
+    } else if is_secret {
+        "\u{2022}".repeat(input.input.value.len())
+    } else {
+        input.input.value.clone()
+    };
+    lines.push(Line::from(vec![
+        Span::raw(" "),
+        Span::styled(display, Style::default().bg(theme::PANEL_SELECTED)),
+    ]));
+    lines.push(Line::from(""));
+    if let Some(error) = &input.error {
+        lines.push(Line::from(Span::styled(
+            format!(" {}", error),
+            Style::default().fg(theme::ERROR),
+        )));
+    }
+    if input.saving {
+        lines.push(Line::from(Span::styled(
+            " Saving...",
+            Style::default().fg(theme::NEUTRAL_GRAY),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            " Enter save · Esc cancel ",
+            Style::default().fg(theme::NEUTRAL_GRAY),
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Left), inner);
+}
+
+fn render_plugin_install_input(frame: &mut Frame, main: &MainState) {
+    let Some(input) = &main.plugin_install_input else {
+        return;
+    };
+    let area = frame.area();
+    let width = area.width.min(76);
+    let height = 7;
+    let x = area.x + (area.width - width) / 2;
+    let y = area.y + (area.height - height) / 2;
+    let rect = ratatui::layout::Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Install Local Plugin ")
+        .border_style(Style::default().fg(theme::BRAND));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let mut lines = vec![Line::from("")];
+    let display = if input.input.value.is_empty() {
+        "(path to folder containing plugin.json)".to_owned()
+    } else {
+        input.input.value.clone()
+    };
+    lines.push(Line::from(vec![
+        Span::raw(" "),
+        Span::styled(display, Style::default().bg(theme::PANEL_SELECTED)),
+    ]));
+    lines.push(Line::from(""));
+    if let Some(error) = &input.error {
+        lines.push(Line::from(Span::styled(
+            format!(" {error}"),
+            Style::default().fg(theme::ERROR),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        if input.saving {
+            " Installing..."
+        } else {
+            " Enter install · Esc cancel "
+        },
+        Style::default().fg(theme::NEUTRAL_GRAY),
+    )));
+
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Left), inner);
+}
+
+fn render_model_picker(frame: &mut Frame, main: &MainState) {
+    let Some(picker) = &main.model_picker else {
+        return;
+    };
+    let area = frame.area();
+    let width = area.width.min(72);
+    let option_count = picker.options.len().min(8) as u16;
+    let height = (option_count + 5).max(7);
+    let x = area.x + (area.width - width) / 2;
+    let y = area.y + (area.height - height) / 2;
+    let rect = ratatui::layout::Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(picker.title.clone())
+        .border_style(Style::default().fg(theme::BRAND));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(""));
+    for (idx, option) in picker.options.iter().enumerate() {
+        let marker = if idx == picker.selected { ">" } else { " " };
+        let style = if idx == picker.selected {
+            Style::default()
+                .fg(theme::NEUTRAL_WHITE)
+                .bg(theme::PANEL_SELECTED)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::NEUTRAL_WHITE)
+        };
+        lines.push(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(format!("{marker} {option}"), style),
+        ]));
+    }
+    if let Some(error) = &picker.error {
+        lines.push(Line::from(Span::styled(
+            format!(" {error}"),
+            Style::default().fg(theme::ERROR),
+        )));
+    } else {
+        lines.push(Line::from(""));
+    }
+    let hint = if picker.saving {
+        " Saving..."
+    } else {
+        " ↑/↓ select · Enter save · Esc cancel "
+    };
+    lines.push(Line::from(Span::styled(
+        hint,
+        Style::default().fg(theme::NEUTRAL_GRAY),
+    )));
+
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Left), inner);
 }
 
 pub fn format_timestamp(seconds: i64) -> String {

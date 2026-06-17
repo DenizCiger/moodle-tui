@@ -19,6 +19,8 @@ pub struct PluginManifest {
 #[serde(rename_all = "snake_case")]
 pub enum PluginPermission {
     QuizReadCurrentQuestion,
+    QuizWriteAnswers,
+    Network,
     NetworkGemini,
     SecretsReadPlugin,
     UiShowPanel,
@@ -36,6 +38,10 @@ pub struct QuizActionContribution {
     pub title: String,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub result_kind: Option<String>,
+    #[serde(default)]
+    pub default_key: Option<String>,
 }
 
 impl PluginManifest {
@@ -52,6 +58,9 @@ impl PluginManifest {
             validate_action_id(&action.id)?;
             if action.title.trim().is_empty() {
                 return Err(format!("quiz action '{}' requires a title", action.id));
+            }
+            if let Some(kind) = &action.result_kind {
+                validate_action_id(kind)?;
             }
         }
         Ok(())
@@ -122,6 +131,8 @@ mod tests {
                     id: "study_help".into(),
                     title: "AI Study Help".into(),
                     description: None,
+                    result_kind: None,
+                    default_key: None,
                 }],
             },
         };

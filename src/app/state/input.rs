@@ -1,11 +1,12 @@
 use crate::app::state::types::{
     AppCommand, AppState, AssignmentModalData, CourseView, DashboardPane, LinkAction, LoginFocus,
-    MainState, QuizModalData, Screen,
+    MainState, QuizModalData, Screen, SettingsPane, SettingsPaneState,
 };
 use crate::models::QuizAnswerKind;
 use crate::models::RuntimeConfig;
 use crate::moodle::urls::{build_assignment_activity_url, build_course_view_url};
-use crate::shortcuts::is_shortcut_pressed;
+use crate::plugins::protocol::{QuizControlContext, QuizOptionContext, QuizQuestionContext};
+use crate::shortcuts::{core_key_conflicts, is_key_label_pressed, is_shortcut_pressed};
 use crate::ui::course_tree::{CourseTreeNodeKind, CourseTreeRow, build_course_tree_rows};
 use crossterm::event::KeyEvent;
 use tui_components::input::login::{
@@ -130,36 +131,111 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
         _ => return Vec::new(),
     };
 
-    if main.settings_open {
-        if is_shortcut_pressed("settings-close", key) {
-            main.settings_open = false;
-            main.settings_scroll = 0;
+    if let Some(picker) = &mut main.model_picker {
+        if picker.saving {
             return Vec::new();
         }
-        let total = settings_total_lines();
-        let (term_w, term_h) = state.terminal_size;
-        let modal_h = ((term_h as f32) * 0.8) as u16;
-        let viewport = modal_h.saturating_sub(3);
-        let max_scroll = total.saturating_sub(viewport);
-        let _ = term_w;
         match key.code {
             crossterm::event::KeyCode::Up => {
-                main.settings_scroll = main.settings_scroll.min(max_scroll).saturating_sub(1);
+                picker.selected = picker.selected.saturating_sub(1);
             }
             crossterm::event::KeyCode::Down => {
-                main.settings_scroll = (main.settings_scroll + 1).min(max_scroll);
+                let max = picker.options.len().saturating_sub(1);
+                picker.selected = (picker.selected + 1).min(max);
             }
-            crossterm::event::KeyCode::PageUp => {
-                main.settings_scroll = main.settings_scroll.min(max_scroll).saturating_sub(10);
+            crossterm::event::KeyCode::Home => picker.selected = 0,
+            crossterm::event::KeyCode::End => {
+                picker.selected = picker.options.len().saturating_sub(1);
             }
-            crossterm::event::KeyCode::PageDown => {
-                main.settings_scroll = (main.settings_scroll + 10).min(max_scroll);
+            crossterm::event::KeyCode::Enter => {
+                let Some(value) = picker.options.get(picker.selected).cloned() else {
+                    picker.error = Some("No model options available.".into());
+                    return Vec::new();
+                };
+                picker.saving = true;
+                picker.error = None;
+                return vec![AppCommand::SavePluginSetting {
+                    plugin_id: picker.plugin_id.clone(),
+                    setting_name: picker.setting_name.clone(),
+                    secret: picker.secret,
+                    value,
+                }];
             }
-            crossterm::event::KeyCode::Home => main.settings_scroll = 0,
-            crossterm::event::KeyCode::End => main.settings_scroll = max_scroll,
+            crossterm::event::KeyCode::Esc => {
+                main.model_picker = None;
+            }
             _ => {}
         }
         return Vec::new();
+    }
+
+    if let Some(input) = &mut main.api_key_input {
+        if input.saving {
+            return Vec::new();
+        }
+        match key.code {
+            crossterm::event::KeyCode::Enter => {
+                let value = input.input.value.clone();
+                if value.trim().is_empty() {
+                    return Vec::new();
+                }
+                input.saving = true;
+                input.error = None;
+                return vec![AppCommand::SavePluginSetting {
+                    plugin_id: input.plugin_id.clone(),
+                    setting_name: input.setting_name.clone(),
+                    secret: input.secret,
+                    value,
+                }];
+            }
+            crossterm::event::KeyCode::Esc => {
+                main.api_key_input = None;
+            }
+            crossterm::event::KeyCode::Backspace => {
+                input.input.value.pop();
+            }
+            crossterm::event::KeyCode::Char(ch) => {
+                if !ch.is_control() {
+                    input.input.value.push(ch);
+                }
+            }
+            _ => {}
+        }
+        return Vec::new();
+    }
+
+    if let Some(input) = &mut main.plugin_install_input {
+        if input.saving {
+            return Vec::new();
+        }
+        match key.code {
+            crossterm::event::KeyCode::Enter => {
+                let value = input.input.value.trim();
+                if value.is_empty() {
+                    return Vec::new();
+                }
+                input.saving = true;
+                input.error = None;
+                return vec![AppCommand::InstallPluginFromDir(value.into())];
+            }
+            crossterm::event::KeyCode::Esc => {
+                main.plugin_install_input = None;
+            }
+            crossterm::event::KeyCode::Backspace => {
+                input.input.value.pop();
+            }
+            crossterm::event::KeyCode::Char(ch) => {
+                if !ch.is_control() {
+                    input.input.value.push(ch);
+                }
+            }
+            _ => {}
+        }
+        return Vec::new();
+    }
+
+    if main.settings_open {
+        return handle_settings_key(main, key);
     }
 
     if main.assignment_modal.is_some() {
@@ -552,6 +628,7 @@ fn open_quiz_for_course_module(
         loading: true,
         saving: false,
         finishing: false,
+        ai_filling: false,
         confirm_finish: false,
         error: None,
         selected_question: 0,
@@ -629,15 +706,171 @@ fn open_modal_for_course_module(
     Vec::new()
 }
 
-fn settings_total_lines() -> u16 {
-    use crate::shortcuts::{TabId, get_shortcut_sections};
-    let mut count = 0u16;
-    for section in get_shortcut_sections(TabId::Dashboard) {
-        count += 1;
-        count += section.items.len() as u16;
-        count += 1;
+fn handle_settings_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand> {
+    if active_settings_state(main).search_active {
+        return handle_settings_search_key(main, key);
     }
-    count
+
+    match key.code {
+        crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('?') => {
+            main.settings_open = false;
+            main.settings_keybinds.search_active = false;
+            main.settings_config.search_active = false;
+        }
+        crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::BackTab => {
+            main.settings_active_pane = main.settings_active_pane.toggle();
+        }
+        crossterm::event::KeyCode::Char('/') => {
+            let state = active_settings_state(main);
+            state.search_query.clear();
+            state.search_active = true;
+            state.cursor = 0;
+            state.scroll = 0;
+        }
+        crossterm::event::KeyCode::Up => move_settings_cursor(main, -1),
+        crossterm::event::KeyCode::Down => move_settings_cursor(main, 1),
+        crossterm::event::KeyCode::Home => {
+            let state = active_settings_state(main);
+            state.cursor = 0;
+            state.scroll = 0;
+        }
+        crossterm::event::KeyCode::End => {
+            let max = active_settings_len(main).saturating_sub(1);
+            let state = active_settings_state(main);
+            state.cursor = max;
+            state.scroll = max as u16;
+        }
+        crossterm::event::KeyCode::PageUp => move_settings_cursor(main, -10),
+        crossterm::event::KeyCode::PageDown => move_settings_cursor(main, 10),
+        crossterm::event::KeyCode::Enter => {
+            if main.settings_active_pane == SettingsPane::Config {
+                return open_selected_config_field(main);
+            }
+        }
+        _ => {}
+    }
+    Vec::new()
+}
+
+fn handle_settings_search_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand> {
+    match key.code {
+        crossterm::event::KeyCode::Enter => {
+            active_settings_state(main).search_active = false;
+        }
+        crossterm::event::KeyCode::Esc => {
+            let state = active_settings_state(main);
+            state.search_active = false;
+            state.search_query.clear();
+            state.cursor = 0;
+            state.scroll = 0;
+        }
+        crossterm::event::KeyCode::Backspace => {
+            active_settings_state(main).search_query.pop();
+            clamp_active_settings_cursor(main);
+        }
+        crossterm::event::KeyCode::Char(ch) => {
+            if !ch.is_control() {
+                active_settings_state(main).search_query.push(ch);
+                clamp_active_settings_cursor(main);
+            }
+        }
+        _ => {}
+    }
+    Vec::new()
+}
+
+fn active_settings_state(main: &mut MainState) -> &mut SettingsPaneState {
+    match main.settings_active_pane {
+        SettingsPane::Keybinds => &mut main.settings_keybinds,
+        SettingsPane::Config => &mut main.settings_config,
+    }
+}
+
+fn active_settings_len(main: &MainState) -> usize {
+    match main.settings_active_pane {
+        SettingsPane::Keybinds => crate::ui::settings::filtered_keybind_rows(main).len(),
+        SettingsPane::Config => crate::ui::settings::filtered_config_rows(main).len(),
+    }
+}
+
+fn clamp_active_settings_cursor(main: &mut MainState) {
+    let len = active_settings_len(main);
+    let state = active_settings_state(main);
+    state.cursor = state.cursor.min(len.saturating_sub(1));
+    state.scroll = state.scroll.min(state.cursor as u16);
+}
+
+fn move_settings_cursor(main: &mut MainState, delta: isize) {
+    let len = active_settings_len(main);
+    if len == 0 {
+        let state = active_settings_state(main);
+        state.cursor = 0;
+        state.scroll = 0;
+        return;
+    }
+    let state = active_settings_state(main);
+    if delta < 0 {
+        state.cursor = state.cursor.saturating_sub(delta.unsigned_abs());
+    } else {
+        state.cursor = (state.cursor + delta as usize).min(len - 1);
+    }
+    state.scroll = state.cursor as u16;
+}
+
+fn open_selected_config_field(main: &mut MainState) -> Vec<AppCommand> {
+    let rows = crate::ui::settings::filtered_config_rows(main);
+    let Some(row) = rows
+        .get(
+            main.settings_config
+                .cursor
+                .min(rows.len().saturating_sub(1)),
+        )
+        .cloned()
+    else {
+        return Vec::new();
+    };
+    match row.field {
+        crate::ui::settings::SettingsConfigField::InstallPlugin => {
+            main.api_key_input = None;
+            main.model_picker = None;
+            main.plugin_install_input = Some(crate::app::state::types::PluginInstallConfig {
+                input: crate::app::state::text_input::TextInputState::new(),
+                saving: false,
+                error: None,
+            });
+        }
+        crate::ui::settings::SettingsConfigField::ReloadPlugins => {
+            return vec![AppCommand::ReloadPlugins];
+        }
+        crate::ui::settings::SettingsConfigField::TogglePlugin { plugin_id } => {
+            if let Some(plugin) = main
+                .plugin_registry
+                .plugins
+                .iter()
+                .find(|plugin| plugin.manifest.id == plugin_id)
+            {
+                let _ = crate::plugins::registry::set_plugin_enabled(&plugin_id, !plugin.enabled);
+                return vec![AppCommand::ReloadPlugins];
+            }
+        }
+        crate::ui::settings::SettingsConfigField::UninstallPlugin { plugin_id } => {
+            return vec![AppCommand::UninstallPlugin(plugin_id)];
+        }
+        crate::ui::settings::SettingsConfigField::PluginSetting {
+            plugin_id,
+            setting_name,
+            label,
+            secret,
+            options,
+        } => {
+            if options.is_empty() {
+                open_plugin_text_input(main, plugin_id, setting_name, label, secret);
+            } else {
+                open_plugin_select_picker(main, plugin_id, setting_name, label, secret, options);
+            }
+        }
+    }
+    Vec::new()
 }
 
 fn handle_assignment_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand> {
@@ -729,7 +962,7 @@ fn handle_quiz_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand>
         Some(m) => m,
         None => return Vec::new(),
     };
-    if modal.loading || modal.saving || modal.finishing {
+    if modal.loading || modal.saving || modal.finishing || modal.ai_filling {
         return Vec::new();
     }
     if modal.attempt.is_none() {
@@ -771,6 +1004,15 @@ fn handle_quiz_modal_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand>
         }
         return Vec::new();
     }
+
+    let _ = modal;
+    if let Some(commands) = handle_plugin_quiz_action(main, key) {
+        return commands;
+    }
+    let modal = match &mut main.quiz_modal {
+        Some(m) => m,
+        None => return Vec::new(),
+    };
 
     match key.code {
         KeyCode::Up => {
@@ -1065,6 +1307,183 @@ fn handle_finder_key(
         _ => {}
     }
     Vec::new()
+}
+
+fn open_plugin_text_input(
+    main: &mut MainState,
+    plugin_id: String,
+    setting_name: String,
+    label: String,
+    secret: bool,
+) {
+    main.model_picker = None;
+    main.plugin_install_input = None;
+    let current_value = main
+        .plugin_settings
+        .get(&plugin_id)
+        .and_then(|settings| settings.get(&setting_name))
+        .cloned()
+        .unwrap_or_default();
+    main.api_key_input = Some(crate::app::state::types::PluginApiKeyConfig {
+        input: crate::app::state::text_input::TextInputState::new(),
+        plugin_id,
+        setting_name,
+        secret,
+        saving: false,
+        error: None,
+        title: format!(" {label} "),
+        current_value,
+    });
+}
+
+fn open_plugin_select_picker(
+    main: &mut MainState,
+    plugin_id: String,
+    setting_name: String,
+    label: String,
+    secret: bool,
+    mut options: Vec<String>,
+) {
+    main.api_key_input = None;
+    main.plugin_install_input = None;
+    let current = main
+        .plugin_settings
+        .get(&plugin_id)
+        .and_then(|settings| settings.get(&setting_name))
+        .cloned()
+        .or_else(|| {
+            main.plugin_registry
+                .plugins
+                .iter()
+                .find(|plugin| plugin.manifest.id == plugin_id)
+                .and_then(|plugin| {
+                    plugin
+                        .manifest
+                        .settings_schema
+                        .as_ref()
+                        .and_then(|schema| schema.get("properties"))
+                        .and_then(|props| props.get(&setting_name))
+                        .and_then(|setting| setting.get("default"))
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned)
+                })
+        })
+        .unwrap_or_default();
+    if !options.iter().any(|option| option == &current) {
+        options.push(current.clone());
+    }
+    let selected = options
+        .iter()
+        .position(|option| option == &current)
+        .unwrap_or(0);
+    main.model_picker = Some(crate::app::state::types::PluginModelPickerConfig {
+        plugin_id,
+        setting_name,
+        secret,
+        title: format!(" {label} "),
+        options,
+        selected,
+        saving: false,
+        error: None,
+    });
+}
+
+fn handle_plugin_quiz_action(main: &mut MainState, key: KeyEvent) -> Option<Vec<AppCommand>> {
+    let (context, plugin, action_id, result_kind) = {
+        let modal = main.quiz_modal.as_ref()?;
+        let attempt = modal.attempt.as_ref()?;
+        let question = attempt.questions.get(modal.selected_question)?;
+        if question.controls.is_empty() || question.unsupported {
+            return Some(vec![AppCommand::ShowToast(
+                "No answerable controls on this question.".into(),
+            )]);
+        }
+
+        let (plugin, action) = main
+            .plugin_registry
+            .plugins
+            .iter()
+            .filter(|plugin| plugin.enabled && plugin.load_error.is_none())
+            .find_map(|plugin| {
+                plugin
+                    .manifest
+                    .contributes
+                    .quiz_actions
+                    .iter()
+                    .find(|action| {
+                        action.default_key.as_ref().is_some_and(|label| {
+                            !core_key_conflicts(label) && is_key_label_pressed(label, key)
+                        })
+                    })
+                    .map(|action| (plugin, action))
+            })?;
+        if !plugin.enabled {
+            return Some(vec![AppCommand::ShowToast(format!(
+                "{} plugin is disabled.",
+                plugin.manifest.name
+            ))]);
+        }
+
+        let context = QuizQuestionContext {
+            quiz_id: modal.quiz_id,
+            attempt_id: attempt.attempt.id,
+            quiz_name: modal.quiz_name.clone(),
+            question_index: modal.selected_question,
+            question_number: question.number.clone(),
+            question_text: question.text.clone(),
+            controls: question
+                .controls
+                .iter()
+                .filter(|c| !matches!(c.kind, QuizAnswerKind::Hidden | QuizAnswerKind::Unsupported))
+                .map(|c| QuizControlContext {
+                    name: c.name.clone(),
+                    kind: match c.kind {
+                        QuizAnswerKind::SingleChoice => "single_choice".into(),
+                        QuizAnswerKind::MultiChoice => "multi_choice".into(),
+                        QuizAnswerKind::Text => "text".into(),
+                        QuizAnswerKind::Hidden => "hidden".into(),
+                        QuizAnswerKind::Unsupported => "unsupported".into(),
+                    },
+                    options: c
+                        .options
+                        .iter()
+                        .map(|o| QuizOptionContext {
+                            label: o.label.clone(),
+                            value: if c.kind == QuizAnswerKind::MultiChoice {
+                                o.name.clone().unwrap_or_else(|| o.value.clone())
+                            } else {
+                                o.value.clone()
+                            },
+                            name: o.name.clone(),
+                        })
+                        .collect(),
+                    current_text: if c.kind == QuizAnswerKind::Text {
+                        Some(c.value.clone())
+                    } else {
+                        None
+                    },
+                })
+                .collect(),
+        };
+
+        (
+            context,
+            plugin.clone(),
+            action.id.clone(),
+            action.result_kind.clone(),
+        )
+    };
+
+    if let Some(modal) = main.quiz_modal.as_mut() {
+        modal.ai_filling = true;
+    }
+
+    Some(vec![AppCommand::InvokePluginQuizAction {
+        plugin,
+        action_id,
+        result_kind,
+        question_context: context,
+    }])
 }
 
 fn current_finder_max(main: &MainState, is_course_finder: bool) -> usize {

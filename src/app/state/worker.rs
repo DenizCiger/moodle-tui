@@ -2,7 +2,8 @@ use crate::app::state::types::{
     AppCommand, AppState, CourseView, DashboardData, LoginState, MainState, Screen,
 };
 use crate::demo::{demo_courses, demo_upcoming};
-use crate::models::{RuntimeConfig, SavedConfig};
+use crate::models::{QuizAnswerKind, RuntimeConfig, SavedConfig};
+use crate::plugins::AiFillResponse;
 use crate::storage;
 
 impl AppState {
@@ -201,6 +202,118 @@ impl AppState {
                 }
                 Vec::new()
             }
+            WorkerEvent::PluginSettingSaved {
+                plugin_id,
+                setting_name,
+                secret,
+                result,
+            } => {
+                if let Screen::MainShell(main) = &mut self.screen {
+                    if result.is_ok() {
+                        if secret {
+                            main.plugin_secret_configured
+                                .insert(crate::ui::settings::setting_key(
+                                    &plugin_id,
+                                    &setting_name,
+                                ));
+                        }
+                        main.api_key_input = None;
+                        main.model_picker = None;
+                    } else if let Err(error) = &result {
+                        if let Some(input) = &mut main.api_key_input {
+                            input.saving = false;
+                            input.error = Some(error.clone());
+                        }
+                        if let Some(picker) = &mut main.model_picker {
+                            picker.saving = false;
+                            picker.error = Some(error.clone());
+                        }
+                    }
+                    main.plugin_settings = load_plugin_settings_cache(&main.plugin_registry);
+                    main.toast_id = main.toast_id.wrapping_add(1);
+                    main.toast = Some(match result {
+                        Ok(()) => format!("{plugin_id} setting saved."),
+                        Err(e) => format!("Failed to save setting: {e}"),
+                    });
+                    return vec![AppCommand::ScheduleToastExpire(main.toast_id)];
+                }
+                Vec::new()
+            }
+            WorkerEvent::PluginQuizActionResult {
+                plugin_id: _,
+                action_title,
+                result_kind,
+                result,
+            } => {
+                if let Screen::MainShell(main) = &mut self.screen {
+                    if let Some(modal) = &mut main.quiz_modal {
+                        modal.ai_filling = false;
+                        if result_kind.as_deref() != Some("quiz_fill_answers") {
+                            modal.error =
+                                Some(format!("{action_title} returned unsupported result kind."));
+                            return Vec::new();
+                        }
+                        match result {
+                            Ok(response) => {
+                                let filled = apply_ai_fill(modal, &response);
+                                main.toast_id = main.toast_id.wrapping_add(1);
+                                if filled == 0 {
+                                    modal.error = Some(
+                                        "Plugin returned no applicable answer for this question."
+                                            .into(),
+                                    );
+                                    main.toast = Some(
+                                        "Plugin fill error: no applicable answer returned.".into(),
+                                    );
+                                } else {
+                                    main.toast = Some(format!(
+                                        "{action_title} filled {filled} answer{} ({} confidence)",
+                                        if filled == 1 { "" } else { "s" },
+                                        match response.confidence {
+                                            crate::plugins::StudyHelpConfidence::High => "high",
+                                            crate::plugins::StudyHelpConfidence::Medium => "medium",
+                                            crate::plugins::StudyHelpConfidence::Low => "low",
+                                        }
+                                    ));
+                                }
+                                return vec![AppCommand::ScheduleToastExpire(main.toast_id)];
+                            }
+                            Err(error) => {
+                                modal.error = Some(error.clone());
+                                main.toast_id = main.toast_id.wrapping_add(1);
+                                main.toast = Some(format!("{action_title} error: {error}"));
+                                return vec![AppCommand::ScheduleToastExpire(main.toast_id)];
+                            }
+                        }
+                    }
+                }
+                Vec::new()
+            }
+            WorkerEvent::PluginRegistryChanged(result) => {
+                if let Screen::MainShell(main) = &mut self.screen {
+                    main.toast_id = main.toast_id.wrapping_add(1);
+                    match result {
+                        Ok(registry) => {
+                            main.plugin_install_input = None;
+                            main.plugin_registry = registry;
+                            main.plugin_settings =
+                                load_plugin_settings_cache(&main.plugin_registry);
+                            main.plugin_secret_configured =
+                                load_plugin_secret_configured(&main.plugin_registry);
+                            main.toast = Some("Plugin registry updated.".into());
+                        }
+                        Err(error) => {
+                            if let Some(input) = &mut main.plugin_install_input {
+                                input.saving = false;
+                                input.error = Some(error.clone());
+                            }
+                            main.toast = Some(format!("Plugin error: {error}"));
+                        }
+                    }
+                    return vec![AppCommand::ScheduleToastExpire(main.toast_id)];
+                }
+                Vec::new()
+            }
             WorkerEvent::Toast(message) => {
                 let mut id = 0u64;
                 if let Screen::MainShell(main) = &mut self.screen {
@@ -259,6 +372,8 @@ impl AppState {
                 from_cache: false,
             };
             main.plugin_registry = plugin_registry;
+            main.plugin_settings = load_plugin_settings_cache(&main.plugin_registry);
+            main.plugin_secret_configured = load_plugin_secret_configured(&main.plugin_registry);
             self.screen = Screen::MainShell(main);
             return Vec::new();
         }
@@ -309,6 +424,9 @@ impl AppState {
                 let mut main = MainState::default();
                 main.config = Some(config.clone());
                 main.plugin_registry = crate::plugins::registry::load_registry();
+                main.plugin_settings = load_plugin_settings_cache(&main.plugin_registry);
+                main.plugin_secret_configured =
+                    load_plugin_secret_configured(&main.plugin_registry);
                 main.dashboard.loading = true;
                 if let Some(cached) = storage::cache::get_cached_dashboard() {
                     main.dashboard.courses = cached.courses;
@@ -344,5 +462,202 @@ impl AppState {
                 Vec::new()
             }
         }
+    }
+}
+
+fn apply_ai_fill(
+    modal: &mut crate::app::state::types::QuizModalData,
+    response: &AiFillResponse,
+) -> usize {
+    let mut filled = 0usize;
+    for answer in &response.answers {
+        let control = modal
+            .attempt
+            .as_mut()
+            .and_then(|a| a.questions.get_mut(modal.selected_question))
+            .and_then(|q| {
+                q.controls
+                    .iter_mut()
+                    .find(|c| c.name == answer.control_name)
+            });
+
+        let Some(control) = control else { continue };
+
+        match control.kind {
+            QuizAnswerKind::SingleChoice => {
+                if let Some(value) = answer.selected_values.first() {
+                    let mut changed = false;
+                    for option in control.options.iter_mut() {
+                        let selected = option.value == *value;
+                        changed |= option.selected != selected;
+                        option.selected = option.value == *value;
+                    }
+                    if changed || control.options.iter().any(|option| option.selected) {
+                        filled += 1;
+                    }
+                }
+            }
+            QuizAnswerKind::MultiChoice => {
+                let mut changed = false;
+                for option in control.options.iter_mut() {
+                    let selected = answer.selected_values.contains(&option.value)
+                        || option
+                            .name
+                            .as_ref()
+                            .is_some_and(|name| answer.selected_values.contains(name));
+                    changed |= option.selected != selected;
+                    option.selected = selected;
+                }
+                if changed || control.options.iter().any(|option| option.selected) {
+                    filled += 1;
+                }
+            }
+            QuizAnswerKind::Text => {
+                if let Some(text) = &answer.text_value {
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        control.value = text.to_owned();
+                        filled += 1;
+                    }
+                }
+            }
+            QuizAnswerKind::Hidden | QuizAnswerKind::Unsupported => {}
+        }
+    }
+    filled
+}
+
+fn load_plugin_settings_cache(
+    registry: &crate::plugins::PluginRegistry,
+) -> std::collections::HashMap<String, std::collections::HashMap<String, String>> {
+    let all = storage::plugin_settings::load_all();
+    let mut cache = std::collections::HashMap::new();
+    for plugin in &registry.plugins {
+        let mut values = all
+            .plugins
+            .get(&plugin.manifest.id)
+            .cloned()
+            .unwrap_or_default();
+        if plugin.manifest.id == "quiz-ai-extension" && !values.contains_key("gemini_model") {
+            if let Ok(Some(model)) =
+                storage::secret::load_plugin_secret(&plugin.manifest.id, "gemini_model")
+            {
+                values.insert("gemini_model".into(), model);
+            }
+        }
+        cache.insert(plugin.manifest.id.clone(), values);
+    }
+    cache
+}
+
+fn load_plugin_secret_configured(
+    registry: &crate::plugins::PluginRegistry,
+) -> std::collections::HashSet<String> {
+    let mut configured = std::collections::HashSet::new();
+    for plugin in &registry.plugins {
+        for (name, schema) in
+            crate::ui::settings::plugin_settings_schema(plugin.manifest.settings_schema.as_ref())
+        {
+            if crate::ui::settings::schema_is_secret(schema)
+                && storage::secret::load_plugin_secret(&plugin.manifest.id, &name)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|value| !value.trim().is_empty())
+            {
+                configured.insert(crate::ui::settings::setting_key(&plugin.manifest.id, &name));
+            }
+        }
+    }
+    configured
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::state::types::QuizModalData;
+    use crate::models::{
+        QuizAnswerControl, QuizAnswerKind, QuizAnswerOption, QuizAttempt, QuizAttemptData,
+        QuizQuestion,
+    };
+    use crate::plugins::{ControlAnswer, StudyHelpConfidence};
+
+    #[test]
+    fn applies_multi_choice_by_checkbox_input_name() {
+        let mut modal = QuizModalData {
+            course_id: 1,
+            quiz_id: 1,
+            cmid: 1,
+            quiz_name: "Quiz".into(),
+            course_name: "Course".into(),
+            module_description: None,
+            module_url: None,
+            summary: None,
+            attempt: Some(QuizAttemptData {
+                attempt: QuizAttempt {
+                    id: 1,
+                    quiz: 1,
+                    state: "inprogress".into(),
+                    currentpage: None,
+                    timestart: None,
+                    timefinish: None,
+                },
+                questions: vec![QuizQuestion {
+                    slot: 1,
+                    number: Some("3".into()),
+                    name: "Q".into(),
+                    text: "Compiled languages?".into(),
+                    html: String::new(),
+                    unsupported: false,
+                    controls: vec![QuizAnswerControl {
+                        name: "q10:3".into(),
+                        kind: QuizAnswerKind::MultiChoice,
+                        value: String::new(),
+                        options: (0..5)
+                            .map(|idx| QuizAnswerOption {
+                                name: Some(format!("q10:3_choice{idx}")),
+                                label: idx.to_string(),
+                                value: "1".into(),
+                                selected: false,
+                            })
+                            .collect(),
+                    }],
+                }],
+                warnings: Vec::new(),
+            }),
+            loading: false,
+            saving: false,
+            finishing: false,
+            ai_filling: false,
+            confirm_finish: false,
+            error: None,
+            selected_question: 0,
+            selected_control: 0,
+            selected_option: 0,
+            editing_text: false,
+        };
+        let response = AiFillResponse {
+            answers: vec![ControlAnswer {
+                control_name: "q10:3".into(),
+                selected_values: vec![
+                    "q10:3_choice0".into(),
+                    "q10:3_choice3".into(),
+                    "q10:3_choice4".into(),
+                ],
+                text_value: None,
+            }],
+            explanation: String::new(),
+            confidence: StudyHelpConfidence::High,
+        };
+
+        assert_eq!(apply_ai_fill(&mut modal, &response), 1);
+        let options = &modal.attempt.as_ref().unwrap().questions[0].controls[0].options;
+        assert_eq!(
+            options
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, option)| option.selected.then_some(idx))
+                .collect::<Vec<_>>(),
+            vec![0, 3, 4]
+        );
     }
 }

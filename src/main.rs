@@ -5,7 +5,10 @@ use crossterm::terminal::{
 };
 use moodle_tui::app::state::{AppCommand, AppState, WorkerEvent};
 use moodle_tui::moodle::MoodleClient;
+use moodle_tui::plugins::protocol::HostMessage;
+use moodle_tui::plugins::runtime::PluginRuntime;
 use moodle_tui::{platform, storage, ui};
+
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use std::io;
@@ -113,16 +116,59 @@ fn spawn_input_thread(tx: mpsc::UnboundedSender<RuntimeEvent>) {
     });
 }
 
+fn resolve_plugin_settings(
+    manifest: &moodle_tui::plugins::manifest::PluginManifest,
+) -> serde_json::Value {
+    let mut settings = serde_json::Map::new();
+    let Some(properties) = manifest
+        .settings_schema
+        .as_ref()
+        .and_then(|schema| schema.get("properties"))
+        .and_then(|properties| properties.as_object())
+    else {
+        return serde_json::Value::Object(settings);
+    };
+
+    for (name, schema) in properties {
+        let is_secret = schema
+            .get("format")
+            .and_then(|value| value.as_str())
+            .is_some_and(|format| format == "secret")
+            || schema
+                .get("secret")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+        let value = if is_secret {
+            storage::secret::load_plugin_secret(&manifest.id, name)
+                .ok()
+                .flatten()
+        } else {
+            storage::plugin_settings::load_plugin_setting(&manifest.id, name).or_else(|| {
+                schema
+                    .get("default")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned)
+            })
+        };
+        if let Some(value) = value {
+            settings.insert(name.clone(), serde_json::Value::String(value));
+        }
+    }
+
+    serde_json::Value::Object(settings)
+}
+
 fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand, demo_mode: bool) {
     match command {
         AppCommand::Bootstrap => {
             tokio::spawn(async move {
+                let plugin_registry = moodle_tui::plugins::registry::load_registry();
                 if demo_mode {
                     let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::BootstrapLoaded {
                         saved_config: None,
                         password: None,
                         storage_warning: None,
-                        plugin_registry: Default::default(),
+                        plugin_registry,
                     }));
                     return;
                 }
@@ -140,7 +186,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                     saved_config,
                     password,
                     storage_warning: warning,
-                    plugin_registry: moodle_tui::plugins::registry::load_registry(),
+                    plugin_registry,
                 }));
             });
         }
@@ -310,6 +356,106 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                     attempt_id,
                     result,
                 }));
+            });
+        }
+        AppCommand::InvokePluginQuizAction {
+            plugin,
+            action_id,
+            result_kind,
+            question_context,
+        } => {
+            tokio::spawn(async move {
+                let action_title = plugin
+                    .manifest
+                    .contributes
+                    .quiz_actions
+                    .iter()
+                    .find(|action| action.id == action_id)
+                    .map(|action| action.title.clone())
+                    .unwrap_or_else(|| action_id.clone());
+                let settings = resolve_plugin_settings(&plugin.manifest);
+                let payload = serde_json::json!({
+                    "question": question_context,
+                    "settings": settings,
+                });
+
+                let message = HostMessage::Invoke {
+                    id: format!("plugin-action-{action_id}"),
+                    action: action_id,
+                    payload,
+                };
+
+                let runtime = PluginRuntime::new();
+                let result = match runtime.invoke_once(&plugin, &message) {
+                    Ok(moodle_tui::plugins::protocol::PluginMessage::Ok { payload, .. }) => {
+                        serde_json::from_value::<moodle_tui::plugins::AiFillResponse>(payload)
+                            .map_err(|e| format!("Invalid AI response: {e}"))
+                    }
+                    Ok(moodle_tui::plugins::protocol::PluginMessage::Error { message, .. }) => {
+                        Err(format!("Plugin error: {message}"))
+                    }
+                    Ok(moodle_tui::plugins::protocol::PluginMessage::HostAction { .. }) => {
+                        Err("Plugin sent unexpected HostAction".into())
+                    }
+                    Err(e) => Err(format!("Plugin runtime: {e}")),
+                };
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::PluginQuizActionResult {
+                    plugin_id: plugin.manifest.id,
+                    action_title,
+                    result_kind,
+                    result,
+                }));
+            });
+        }
+        AppCommand::SavePluginSetting {
+            plugin_id,
+            setting_name,
+            secret,
+            value,
+        } => {
+            tokio::spawn(async move {
+                let result = if secret {
+                    storage::secret::save_plugin_secret(&plugin_id, &setting_name, &value)
+                } else {
+                    storage::plugin_settings::save_plugin_setting(&plugin_id, &setting_name, &value)
+                }
+                .map_err(|e| e.to_string());
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::PluginSettingSaved {
+                    plugin_id,
+                    setting_name,
+                    secret,
+                    result,
+                }));
+            });
+        }
+        AppCommand::InstallPluginFromDir(path) => {
+            tokio::spawn(async move {
+                let result = moodle_tui::plugins::registry::install_plugin_from_dir(&path)
+                    .map(|_| moodle_tui::plugins::registry::load_registry())
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::PluginRegistryChanged(
+                    result,
+                )));
+            });
+        }
+        AppCommand::UninstallPlugin(plugin_id) => {
+            tokio::spawn(async move {
+                let result = moodle_tui::plugins::registry::uninstall_plugin(&plugin_id)
+                    .map(|_| {
+                        let _ = storage::plugin_settings::clear_plugin_settings(&plugin_id);
+                        moodle_tui::plugins::registry::load_registry()
+                    })
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::PluginRegistryChanged(
+                    result,
+                )));
+            });
+        }
+        AppCommand::ReloadPlugins => {
+            tokio::spawn(async move {
+                let _ = tx.send(RuntimeEvent::Worker(WorkerEvent::PluginRegistryChanged(
+                    Ok(moodle_tui::plugins::registry::load_registry()),
+                )));
             });
         }
         AppCommand::OpenUrl(url) => {

@@ -117,7 +117,7 @@ function ensure_quiz(stdClass $course): stdClass {
     $quiz = (object)[
         'course' => $course->id,
         'name' => 'TUI supported questions quiz',
-        'intro' => '<p>Seeded quiz for moodle-tui. It contains true/false, multichoice, short answer, and numerical questions.</p>',
+        'intro' => '<p>Seeded quiz for moodle-tui. Tests the AI model across multiple domains: computer science, mathematics, history, and general knowledge.</p>',
         'introformat' => FORMAT_HTML,
         'timeopen' => 0,
         'timeclose' => 0,
@@ -143,7 +143,7 @@ function ensure_quiz(stdClass $course): stdClass {
         'shuffleanswers' => 1,
         'quizpassword' => '',
         'sumgrades' => 0,
-        'grade' => 4,
+        'grade' => 6,
         'timecreated' => time(),
         'timemodified' => time(),
     ];
@@ -189,8 +189,9 @@ function create_question_category(stdClass $course): stdClass {
 }
 
 function save_question(string $qtype, stdClass $form): stdClass {
-    question_bank::get_qtype($qtype)->save_question((object)['qtype' => $qtype], $form);
     global $DB;
+    $question = (object)['qtype' => $qtype];
+    question_bank::get_qtype($qtype)->save_question($question, $form);
     $records = $DB->get_records('question', ['name' => $form->name], 'id DESC', '*', 0, 1);
     return reset($records);
 }
@@ -237,59 +238,112 @@ function add_questions(stdClass $quiz, stdClass $course): void {
         'penalty' => 0.3333333,
     ];
 
+    // ── Q1: True/False (CS) ──────────────────────────────────────────────
     $tf = (object)array_merge($common, [
-        'name' => 'TUI True False',
-        'questiontext' => ['text' => 'The Moodle TUI can save simple quiz answers.', 'format' => FORMAT_HTML],
-        'correctanswer' => 1,
-        'feedbacktrue' => ['text' => 'Correct.', 'format' => FORMAT_HTML],
-        'feedbackfalse' => ['text' => 'Try again.', 'format' => FORMAT_HTML],
+        'name' => 'CS True False: Time complexity of binary search',
+        'questiontext' => [
+            'text' => 'The time complexity of binary search on a sorted array of n elements is O(n).',
+            'format' => FORMAT_HTML,
+        ],
+        'correctanswer' => 0,
+        'feedbacktrue' => ['text' => 'Binary search is O(log n), not O(n).', 'format' => FORMAT_HTML],
+        'feedbackfalse' => ['text' => 'Correct. Binary search halves the search space each iteration, giving O(log n).', 'format' => FORMAT_HTML],
     ]);
     $tfq = ensure_question('truefalse', $tf);
 
-    $mc = (object)array_merge($common, [
-        'name' => 'TUI Multiple Choice',
-        'questiontext' => ['text' => 'Which Moodle activities can this local TUI harness test?', 'format' => FORMAT_HTML],
+    // ── Q2: Multiple Choice Single (Math) ─────────────────────────────────
+    $mc_single = (object)array_merge($common, [
+        'name' => 'Math Single: Derivative of x²',
+        'questiontext' => [
+            'text' => 'What is the derivative of f(x) = x² with respect to x?',
+            'format' => FORMAT_HTML,
+        ],
+        'single' => 1,
+        'shuffleanswers' => 1,
+        'answernumbering' => 'abc',
+        'showstandardinstruction' => 0,
+        'noanswers' => 4,
+        'numhints' => 0,
+        'answer' => [
+            ['text' => 'x', 'format' => FORMAT_PLAIN],
+            ['text' => '2x', 'format' => FORMAT_PLAIN],
+            ['text' => 'x²', 'format' => FORMAT_PLAIN],
+            ['text' => '2', 'format' => FORMAT_PLAIN],
+        ],
+        'fraction' => ['0.0', '1.0', '0.0', '0.0'],
+        'feedback' => [
+            ['text' => 'Incorrect. The power rule gives 2x.', 'format' => FORMAT_HTML],
+            ['text' => 'Correct! d/dx x² = 2x.', 'format' => FORMAT_HTML],
+            ['text' => 'Incorrect. The power rule gives 2x.', 'format' => FORMAT_HTML],
+            ['text' => 'Incorrect. That would be the derivative of 2x.', 'format' => FORMAT_HTML],
+        ],
+        'correctfeedback' => ['text' => 'Correct.', 'format' => FORMAT_HTML],
+        'partiallycorrectfeedback' => ['text' => '', 'format' => FORMAT_HTML],
+        'incorrectfeedback' => ['text' => 'Apply the power rule: bring down the exponent and reduce by one.', 'format' => FORMAT_HTML],
+        'shownumcorrect' => 0,
+    ]);
+    $mc_sinq = recreate_question('multichoice', $mc_single);
+
+    // ── Q3: Multiple Choice Multi (General Knowledge) ─────────────────────
+    $mc_multi = (object)array_merge($common, [
+        'name' => 'GK Multi: Programming languages',
+        'questiontext' => [
+            'text' => 'Which of the following are compiled programming languages? (Select all that apply.)',
+            'format' => FORMAT_HTML,
+        ],
         'single' => 0,
         'shuffleanswers' => 1,
         'answernumbering' => 'abc',
         'showstandardinstruction' => 0,
-        'noanswers' => 3,
+        'noanswers' => 5,
         'numhints' => 0,
         'answer' => [
-            ['text' => 'Assignment', 'format' => FORMAT_PLAIN],
-            ['text' => 'Quiz', 'format' => FORMAT_PLAIN],
-            ['text' => 'Short answer', 'format' => FORMAT_PLAIN],
+            ['text' => 'Rust', 'format' => FORMAT_PLAIN],
+            ['text' => 'Python', 'format' => FORMAT_PLAIN],
+            ['text' => 'C', 'format' => FORMAT_PLAIN],
+            ['text' => 'JavaScript', 'format' => FORMAT_PLAIN],
+            ['text' => 'Go', 'format' => FORMAT_PLAIN],
         ],
-        'fraction' => ['0.0', '0.5', '0.5'],
+        'fraction' => ['0.3333333', '0', '0.3333333', '0', '0.3333334'],
         'feedback' => [
-            ['text' => 'Assignments are separate from this flow.', 'format' => FORMAT_HTML],
-            ['text' => 'Correct.', 'format' => FORMAT_HTML],
-            ['text' => 'Correct.', 'format' => FORMAT_HTML],
+            ['text' => 'Correct. Rust is compiled via LLVM.', 'format' => FORMAT_HTML],
+            ['text' => 'Python is interpreted (or JIT-compiled at runtime), not traditionally compiled.', 'format' => FORMAT_HTML],
+            ['text' => 'Correct. C is compiled to machine code.', 'format' => FORMAT_HTML],
+            ['text' => 'JavaScript is interpreted/ JIT-compiled in the browser, not traditionally compiled ahead of time.', 'format' => FORMAT_HTML],
+            ['text' => 'Correct. Go is compiled to native binaries.', 'format' => FORMAT_HTML],
         ],
-        'correctfeedback' => ['text' => 'Correct.', 'format' => FORMAT_HTML],
-        'partiallycorrectfeedback' => ['text' => 'One correct option is still missing.', 'format' => FORMAT_HTML],
-        'incorrectfeedback' => ['text' => 'Quiz and short answer are covered by this harness.', 'format' => FORMAT_HTML],
+        'correctfeedback' => ['text' => 'Correct! Rust, C, and Go are compiled languages.', 'format' => FORMAT_HTML],
+        'partiallycorrectfeedback' => ['text' => 'Some correct, but watch out for the penalties on incorrect selections.', 'format' => FORMAT_HTML],
+        'incorrectfeedback' => ['text' => 'Rust, C, and Go are compiled. Python and JavaScript are interpreted at the source level.', 'format' => FORMAT_HTML],
         'shownumcorrect' => 0,
     ]);
-    $mcq = recreate_question('multichoice', $mc);
+    $mc_multiq = recreate_question('multichoice', $mc_multi);
 
+    // ── Q4: Short Answer (History) ────────────────────────────────────────
     $sa = (object)array_merge($common, [
-        'name' => 'TUI Short Answer',
-        'questiontext' => ['text' => 'Type moodle-tui.', 'format' => FORMAT_HTML],
+        'name' => 'History Short: Cold War end',
+        'questiontext' => [
+            'text' => 'In what year did the Berlin Wall fall, marking a key moment in the end of the Cold War?',
+            'format' => FORMAT_HTML,
+        ],
         'usecase' => 0,
-        'answer' => ['moodle-tui'],
+        'answer' => ['1989'],
         'fraction' => [1],
-        'feedback' => [['text' => 'Expected moodle-tui.', 'format' => FORMAT_HTML]],
+        'feedback' => [['text' => 'Correct. The Berlin Wall fell on 9 November 1989.', 'format' => FORMAT_HTML]],
     ]);
     $saq = ensure_question('shortanswer', $sa);
 
+    // ── Q5: Numerical (Physics) ───────────────────────────────────────────
     $num = (object)array_merge($common, [
-        'name' => 'TUI Numerical',
-        'questiontext' => ['text' => 'What is 6 * 7?', 'format' => FORMAT_HTML],
-        'answer' => ['42'],
+        'name' => 'Physics Numerical: Gravitational acceleration',
+        'questiontext' => [
+            'text' => 'An object is dropped from rest near the Earth\'s surface. Ignoring air resistance, what is its velocity after 3 seconds? (Use g = 9.8 m/s². Enter only the numeric value in m/s.)',
+            'format' => FORMAT_HTML,
+        ],
+        'answer' => ['29.4'],
         'fraction' => [1],
-        'tolerance' => [0],
-        'feedback' => [['text' => '42.', 'format' => FORMAT_HTML]],
+        'tolerance' => [0.1],
+        'feedback' => [['text' => 'Correct. v = g × t = 9.8 × 3 = 29.4 m/s.', 'format' => FORMAT_HTML]],
         'unitrole' => 0,
         'unitgradingtypes' => 0,
         'unitpenalty' => 0,
@@ -300,8 +354,41 @@ function add_questions(stdClass $quiz, stdClass $course): void {
     ]);
     $numq = ensure_question('numerical', $num);
 
+    // ── Q6: Multiple Choice Single (CS) ─────────────────────────────────
+    $mc_cs = (object)array_merge($common, [
+        'name' => 'CS Single: HTTP status for Not Found',
+        'questiontext' => [
+            'text' => 'Which HTTP status code indicates that a resource was not found on the server?',
+            'format' => FORMAT_HTML,
+        ],
+        'single' => 1,
+        'shuffleanswers' => 1,
+        'answernumbering' => 'abc',
+        'showstandardinstruction' => 0,
+        'noanswers' => 4,
+        'numhints' => 0,
+        'answer' => [
+            ['text' => '200', 'format' => FORMAT_PLAIN],
+            ['text' => '301', 'format' => FORMAT_PLAIN],
+            ['text' => '404', 'format' => FORMAT_PLAIN],
+            ['text' => '500', 'format' => FORMAT_PLAIN],
+        ],
+        'fraction' => ['0.0', '0.0', '1.0', '0.0'],
+        'feedback' => [
+            ['text' => '200 means OK, not Not Found.', 'format' => FORMAT_HTML],
+            ['text' => '301 means Moved Permanently, not Not Found.', 'format' => FORMAT_HTML],
+            ['text' => 'Correct! HTTP 404 means Not Found.', 'format' => FORMAT_HTML],
+            ['text' => '500 means Internal Server Error.', 'format' => FORMAT_HTML],
+        ],
+        'correctfeedback' => ['text' => 'Correct.', 'format' => FORMAT_HTML],
+        'partiallycorrectfeedback' => ['text' => '', 'format' => FORMAT_HTML],
+        'incorrectfeedback' => ['text' => '404 is the standard HTTP status code for "Not Found".', 'format' => FORMAT_HTML],
+        'shownumcorrect' => 0,
+    ]);
+    $mc_csq = recreate_question('multichoice', $mc_cs);
+
     clear_quiz_questions($quiz);
-    foreach ([$tfq, $saq, $numq, $mcq] as $question) {
+    foreach ([$tfq, $mc_sinq, $mc_multiq, $saq, $numq, $mc_csq] as $question) {
         quiz_add_quiz_question($question->id, $quiz, 0, 1);
     }
     global $DB;
