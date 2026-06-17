@@ -6,9 +6,9 @@ use crate::ui::shell::format_timestamp;
 use crate::ui::theme;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 pub fn render_dashboard(frame: &mut Frame, area: Rect, main: &MainState) {
@@ -417,6 +417,7 @@ pub fn filtered_upcoming(main: &MainState) -> Vec<&UpcomingAssignment> {
 }
 
 pub fn render_course_page(frame: &mut Frame, area: Rect, course: &CoursePageData) {
+    fill_area(frame, area, theme::PANEL_ACTIVE_BG);
     let title_name = if !course.course_full_name.is_empty() {
         course.course_full_name.clone()
     } else if !course.course_short_name.is_empty() {
@@ -424,105 +425,278 @@ pub fn render_course_page(frame: &mut Frame, area: Rect, course: &CoursePageData
     } else {
         format!("Course #{}", course.course_id)
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!(" {title_name} "))
-        .border_style(Style::default().fg(theme::BRAND));
+    render_course_header(frame, area, &title_name);
+    let body = pane_body(area);
 
     if course.loading {
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "Loading sections…",
-                Style::default().fg(theme::NEUTRAL_GRAY),
+                pad_to_width("Loading sections…", body.width as usize),
+                secondary_course_style(theme::PANEL_ACTIVE_BG),
             ))),
-            inner,
+            body,
         );
         return;
     }
 
     if let Some(error) = &course.error {
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                format!("Error: {error}"),
-                Style::default().fg(theme::ERROR),
+                pad_to_width(&format!("Error: {error}"), body.width as usize),
+                Style::default().fg(theme::ERROR).bg(theme::PANEL_ACTIVE_BG),
             ))),
-            inner,
+            body,
         );
         return;
     }
 
     let rows = build_course_tree_rows(&course.sections, &course.collapsed);
     let total = rows.len();
-    let inner = block.inner(area);
-    let viewport = inner.height.saturating_sub(1) as usize;
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(body);
+    let viewport = layout[0].height as usize;
     let selected = course.selected_row.min(total.saturating_sub(1));
     let scroll = selected.saturating_sub(viewport.saturating_sub(1));
 
-    let mut items: Vec<ListItem> = Vec::new();
-    for (idx, row) in rows.iter().skip(scroll).take(viewport).enumerate() {
-        let absolute = scroll + idx;
-        let is_selected = absolute == selected;
-        let prefix = render_tree_prefix(row);
-        let secondary = matches!(
-            row.kind,
-            CourseTreeNodeKind::Summary
-                | CourseTreeNodeKind::ModuleDescription
-                | CourseTreeNodeKind::ModuleUrl
-        );
-        let fg = if secondary {
-            theme::NEUTRAL_GRAY
-        } else {
-            theme::NEUTRAL_WHITE
-        };
-        let mut style = Style::default().fg(fg);
-        if is_selected {
-            style = style
-                .bg(theme::PANEL_SELECTED)
-                .fg(theme::NEUTRAL_WHITE)
-                .add_modifier(Modifier::BOLD);
+    let lines: Vec<Line> = if rows.is_empty() {
+        vec![Line::from(Span::styled(
+            pad_to_width("No sections available", layout[0].width as usize),
+            secondary_course_style(theme::PANEL_ACTIVE_BG),
+        ))]
+    } else {
+        let mut visual_lines = Vec::new();
+        for (idx, row) in rows.iter().skip(scroll).enumerate() {
+            visual_lines.extend(course_tree_row_lines(
+                row,
+                scroll + idx == selected,
+                theme::PANEL_ACTIVE_BG,
+                layout[0].width as usize,
+            ));
+            if visual_lines.len() >= viewport {
+                break;
+            }
         }
-        let line = if matches!(row.kind, CourseTreeNodeKind::Label) {
-            Line::from(vec![
-                Span::styled(format!("{prefix} "), style),
-                Span::styled(row.text.clone(), style.add_modifier(Modifier::UNDERLINED)),
-            ])
-        } else {
-            Line::from(Span::styled(
-                format!("{prefix} {} {}", row.icon, row.text),
-                style,
-            ))
-        };
-        items.push(ListItem::new(line));
-    }
+        visual_lines.truncate(viewport);
+        visual_lines
+    };
 
     let counter = if total > 0 {
         format!("{}/{}", selected + 1, total)
     } else {
         "0/0".into()
     };
-    frame.render_widget(block, area);
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(1)])
-        .split(inner);
-    frame.render_widget(List::new(items), layout[0]);
+    frame.render_widget(Paragraph::new(lines), layout[0]);
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            counter,
-            Style::default().fg(theme::NEUTRAL_GRAY),
+            pad_to_width(&counter, layout[1].width as usize),
+            secondary_course_style(theme::PANEL_ACTIVE_BG),
         ))),
         layout[1],
     );
+}
+
+fn render_course_header(frame: &mut Frame, area: Rect, title: &str) {
+    let header_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height.min(1),
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            pad_to_width(title, header_area.width as usize),
+            Style::default()
+                .fg(theme::NEUTRAL_WHITE)
+                .bg(theme::PANEL_ACTIVE_BG)
+                .add_modifier(Modifier::BOLD),
+        ))),
+        header_area,
+    );
+}
+
+fn course_tree_row_lines(
+    row: &crate::ui::course_tree::CourseTreeRow,
+    selected: bool,
+    pane_bg: Color,
+    width: usize,
+) -> Vec<Line<'static>> {
+    if matches!(row.kind, CourseTreeNodeKind::Label) {
+        return label_tree_row_lines(row, selected, pane_bg, width);
+    }
+    vec![course_tree_row_line(row, selected, pane_bg, width)]
+}
+
+fn course_tree_row_line(
+    row: &crate::ui::course_tree::CourseTreeRow,
+    selected: bool,
+    pane_bg: Color,
+    width: usize,
+) -> Line<'static> {
+    let prefix = render_tree_prefix(row);
+    let secondary = matches!(
+        row.kind,
+        CourseTreeNodeKind::Summary
+            | CourseTreeNodeKind::ModuleDescription
+            | CourseTreeNodeKind::ModuleUrl
+    );
+    let text = format!("{prefix} {} {}", row.icon, row.text);
+    let padding = " ".repeat(width.saturating_sub(UnicodeWidthStr::width(text.as_str())));
+
+    if selected {
+        let style = selected_course_style();
+        return Line::from(vec![
+            Span::styled(text, style),
+            Span::styled(padding, style),
+        ]);
+    }
+
+    let style = if secondary {
+        secondary_course_style(pane_bg)
+    } else {
+        Style::default().fg(theme::NEUTRAL_WHITE).bg(pane_bg)
+    };
+    Line::from(vec![
+        Span::styled(text, style),
+        Span::styled(padding, Style::default().bg(pane_bg)),
+    ])
+}
+
+fn label_tree_row_lines(
+    row: &crate::ui::course_tree::CourseTreeRow,
+    selected: bool,
+    pane_bg: Color,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let prefix = render_tree_prefix(row);
+    let first_prefix = format!("{prefix} {} ", row.icon);
+    let continuation_prefix = " ".repeat(UnicodeWidthStr::width(first_prefix.as_str()));
+    let label_width = width
+        .saturating_sub(UnicodeWidthStr::width(first_prefix.as_str()))
+        .max(1);
+
+    wrap_text_to_width(&row.text, label_width)
+        .into_iter()
+        .enumerate()
+        .map(|(idx, text)| {
+            let prefix = if idx == 0 {
+                first_prefix.clone()
+            } else {
+                continuation_prefix.clone()
+            };
+            label_line(&prefix, &text, selected, pane_bg, width)
+        })
+        .collect()
+}
+
+fn label_line(
+    prefix: &str,
+    text: &str,
+    selected: bool,
+    pane_bg: Color,
+    width: usize,
+) -> Line<'static> {
+    let content_width = UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(text);
+    let padding = " ".repeat(width.saturating_sub(content_width));
+    if selected {
+        let style = selected_course_style();
+        return Line::from(vec![
+            Span::styled(prefix.to_owned(), style),
+            Span::styled(text.to_owned(), style),
+            Span::styled(padding, style),
+        ]);
+    }
+
+    Line::from(vec![
+        Span::styled(
+            prefix.to_owned(),
+            Style::default()
+                .fg(theme::BRAND)
+                .bg(pane_bg)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            text.to_owned(),
+            Style::default().fg(theme::NEUTRAL_GRAY).bg(pane_bg),
+        ),
+        Span::styled(padding, Style::default().bg(pane_bg)),
+    ])
+}
+
+fn wrap_text_to_width(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![String::new()];
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+
+    for word in text.split_whitespace() {
+        for part in split_word_to_width(word, width) {
+            if current.is_empty() {
+                current.push_str(&part);
+                continue;
+            }
+
+            let candidate_width = UnicodeWidthStr::width(current.as_str())
+                + 1
+                + UnicodeWidthStr::width(part.as_str());
+            if candidate_width <= width {
+                current.push(' ');
+                current.push_str(&part);
+            } else {
+                lines.push(std::mem::take(&mut current));
+                current.push_str(&part);
+            }
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+fn split_word_to_width(word: &str, width: usize) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0usize;
+
+    for ch in word.chars() {
+        let ch_width = UnicodeWidthStr::width(ch.to_string().as_str()).max(1);
+        if current_width + ch_width > width && !current.is_empty() {
+            parts.push(std::mem::take(&mut current));
+            current_width = 0;
+        }
+        current.push(ch);
+        current_width += ch_width;
+    }
+
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
+fn selected_course_style() -> Style {
+    Style::default()
+        .fg(theme::NEUTRAL_WHITE)
+        .bg(theme::PANEL_SELECTED)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn secondary_course_style(pane_bg: Color) -> Style {
+    Style::default().fg(theme::NEUTRAL_GRAY).bg(pane_bg)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::{Course, UpcomingAssignment};
+    use crate::ui::course_tree::CourseTreeRow;
 
     #[test]
     fn dashboard_filter_applies_to_courses_and_upcoming() {
@@ -687,5 +861,121 @@ mod tests {
                 .iter()
                 .all(|span| span.style.fg == Some(theme::NEUTRAL_WHITE))
         );
+    }
+
+    #[test]
+    fn selected_course_tree_rows_fill_visible_width() {
+        let row = CourseTreeRow {
+            id: "module:1:2".into(),
+            kind: CourseTreeNodeKind::Module,
+            depth: 1,
+            text: "Week 1 quiz".into(),
+            link_url: None,
+            module_type: Some("quiz".into()),
+            icon: "Q",
+            collapsible: false,
+            expanded: false,
+            parent_id: None,
+        };
+
+        let line = course_tree_row_line(&row, true, theme::PANEL_ACTIVE_BG, 40);
+
+        assert_eq!(test_line_width(&line), 40);
+        assert!(
+            line.spans
+                .iter()
+                .all(|span| span.style.bg == Some(theme::PANEL_SELECTED))
+        );
+    }
+
+    #[test]
+    fn secondary_course_tree_rows_are_dimmed_on_pane_background() {
+        let row = CourseTreeRow {
+            id: "summary:1".into(),
+            kind: CourseTreeNodeKind::Summary,
+            depth: 0,
+            text: "Section summary".into(),
+            link_url: None,
+            module_type: None,
+            icon: "",
+            collapsible: false,
+            expanded: false,
+            parent_id: None,
+        };
+
+        let line = course_tree_row_line(&row, false, theme::PANEL_ACTIVE_BG, 40);
+
+        assert_eq!(line.spans[0].style.fg, Some(theme::NEUTRAL_GRAY));
+        assert!(
+            line.spans
+                .iter()
+                .all(|span| span.style.bg == Some(theme::PANEL_ACTIVE_BG))
+        );
+    }
+
+    #[test]
+    fn long_label_rows_wrap_without_exceeding_width() {
+        let row = label_row("This is a very long Moodle label that should wrap cleanly");
+
+        let lines = course_tree_row_lines(&row, false, theme::PANEL_ACTIVE_BG, 28);
+
+        assert!(lines.len() > 1);
+        assert!(lines.iter().all(|line| test_line_width(line) == 28));
+        assert_eq!(lines[0].spans[0].style.fg, Some(theme::BRAND));
+        assert_eq!(lines[0].spans[1].style.fg, Some(theme::NEUTRAL_GRAY));
+        assert!(
+            lines
+                .iter()
+                .flat_map(|line| line.spans.iter())
+                .all(|span| !span.style.add_modifier.contains(Modifier::UNDERLINED))
+        );
+    }
+
+    #[test]
+    fn selected_wrapped_label_lines_fill_width_with_selected_style() {
+        let row = label_row("A selected Moodle label that wraps to another line");
+
+        let lines = course_tree_row_lines(&row, true, theme::PANEL_ACTIVE_BG, 24);
+
+        assert!(lines.len() > 1);
+        assert!(lines.iter().all(|line| test_line_width(line) == 24));
+        assert!(
+            lines
+                .iter()
+                .flat_map(|line| line.spans.iter())
+                .all(|span| span.style.bg == Some(theme::PANEL_SELECTED))
+        );
+    }
+
+    #[test]
+    fn long_label_words_are_split_to_fit_width() {
+        let row = label_row("Supercalifragilisticexpialidocious");
+
+        let lines = course_tree_row_lines(&row, false, theme::PANEL_ACTIVE_BG, 18);
+
+        assert!(lines.len() > 1);
+        assert!(lines.iter().all(|line| test_line_width(line) == 18));
+    }
+
+    fn label_row(text: &str) -> CourseTreeRow {
+        CourseTreeRow {
+            id: "label:1:2".into(),
+            kind: CourseTreeNodeKind::Label,
+            depth: 1,
+            text: text.into(),
+            link_url: None,
+            module_type: None,
+            icon: "L",
+            collapsible: false,
+            expanded: false,
+            parent_id: None,
+        }
+    }
+
+    fn test_line_width(line: &Line) -> usize {
+        line.spans
+            .iter()
+            .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+            .sum()
     }
 }

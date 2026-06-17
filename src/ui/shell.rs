@@ -1,17 +1,26 @@
 use crate::app::state::AppState;
 use crate::app::state::types::CourseView;
 use crate::app::state::types::MainState;
+use crate::ui::shared::centered_rect;
 use crate::ui::{assignment_modal, course_tree, dashboard, quiz_modal, settings, theme};
 use chrono::TimeZone;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-use tui_components::ui::search::{
-    SearchModal, SearchModalCategory, SearchModalRow, highlight_spans,
-};
+use tui_components::input::SearchModalState;
+use tui_components::ui::search::highlight_spans;
 use unicode_width::UnicodeWidthStr;
+
+struct FinderRow {
+    spans: Vec<Span<'static>>,
+}
+
+struct FinderCategory {
+    label: String,
+    active: bool,
+}
 
 pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     let area = frame.area();
@@ -52,7 +61,6 @@ pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
                 Constraint::Length(1),
                 Constraint::Min(1),
                 Constraint::Length(1),
-                Constraint::Length(1),
             ])
             .split(area);
 
@@ -62,8 +70,7 @@ pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
             dashboard::render_course_page(frame, layout[1], course);
         }
 
-        render_horizontal_separator(frame, layout[2]);
-        render_footer(frame, layout[3], main);
+        render_footer(frame, layout[2], main);
     }
 
     if let Some(modal) = &main.assignment_modal {
@@ -203,18 +210,6 @@ fn render_settings_filter_row(frame: &mut Frame, area: Rect, main: &MainState) {
     );
 }
 
-fn render_horizontal_separator(frame: &mut Frame, area: Rect) {
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            "─".repeat(area.width as usize),
-            Style::default()
-                .fg(theme::SEPARATOR)
-                .bg(theme::NEUTRAL_BLACK),
-        ))),
-        area,
-    );
-}
-
 fn render_footer(frame: &mut Frame, area: Rect, main: &MainState) {
     if main.settings_open {
         let text = settings::footer_text(main);
@@ -280,7 +275,7 @@ fn render_finder(frame: &mut Frame, main: &MainState) {
         let highlight_style = Style::default()
             .fg(theme::WARNING)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
-        let rows: Vec<SearchModalRow> = filtered
+        let rows: Vec<FinderRow> = filtered
             .iter()
             .map(|(course, hi)| {
                 let padded_shortname = format!("{:<10}", course.shortname);
@@ -307,19 +302,18 @@ fn render_finder(frame: &mut Frame, main: &MainState) {
                 let mut spans = shortname_spans;
                 spans.push(Span::raw(" "));
                 spans.extend(fullname_spans);
-                SearchModalRow::new(spans)
+                FinderRow { spans }
             })
             .collect();
-        SearchModal {
-            title: " Course finder ",
-            hint: "↑/↓ select · Enter open · Esc cancel",
-            state: &main.finder,
+        render_themed_finder(
+            frame,
+            "Course finder",
+            "↑/↓ select · Enter open · Esc cancel",
+            &main.finder,
             rows,
-            categories: None,
-            empty_text: "No matches",
-            theme: theme::components_theme(),
-        }
-        .render(frame);
+            None,
+            "No matches",
+        );
         return;
     }
 
@@ -338,53 +332,315 @@ fn render_finder(frame: &mut Frame, main: &MainState) {
                 .filter(|r| r.text.to_lowercase().contains(&query))
                 .collect()
         };
-        let categories: Vec<SearchModalCategory> = targets
+        let categories: Vec<FinderCategory> = targets
             .iter()
             .enumerate()
-            .map(|(i, t)| SearchModalCategory {
-                label: t.label.as_str(),
+            .map(|(i, t)| FinderCategory {
+                label: t.label.clone(),
                 active: i == target_idx,
             })
             .collect();
         let highlight_style = Style::default()
             .fg(theme::WARNING)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
-        let rows: Vec<SearchModalRow> = filtered
+        let rows: Vec<FinderRow> = filtered
             .iter()
             .map(|row| {
                 let indices = substring_match_indices(&row.text, &query);
                 let text_spans = if indices.is_empty() {
-                    vec![Span::raw(row.text.clone())]
+                    vec![Span::styled(
+                        row.text.clone(),
+                        Style::default().fg(theme::NEUTRAL_WHITE),
+                    )]
                 } else {
-                    highlight_spans(&row.text, &indices, Style::default(), highlight_style)
+                    highlight_spans(
+                        &row.text,
+                        &indices,
+                        Style::default().fg(theme::NEUTRAL_WHITE),
+                        highlight_style,
+                    )
                 };
-                let mut spans = vec![Span::raw(format!("{} ", row.icon))];
+                let mut spans = vec![Span::styled(
+                    format!("{} ", row.icon),
+                    Style::default().fg(theme::NEUTRAL_GRAY),
+                )];
                 spans.extend(text_spans);
-                SearchModalRow::new(spans)
+                FinderRow { spans }
             })
             .collect();
-        SearchModal {
-            title: " Content finder ",
-            hint: "↑/↓ select · ←/→ change target · Enter jump · Esc cancel",
-            state: &main.finder,
+        render_themed_finder(
+            frame,
+            "Content finder",
+            "↑/↓ select · ←/→ change target · Enter jump · Esc cancel",
+            &main.finder,
             rows,
-            categories: Some(categories),
-            empty_text: "No matches",
-            theme: theme::components_theme(),
-        }
-        .render(frame);
+            Some(categories),
+            "No matches",
+        );
     } else {
-        SearchModal {
-            title: " Content finder ",
-            hint: "↑/↓ select · ←/→ change target · Enter jump · Esc cancel",
-            state: &main.finder,
-            rows: Vec::new(),
-            categories: None,
-            empty_text: "Content finder requires open course",
-            theme: theme::components_theme(),
-        }
-        .render(frame);
+        render_themed_finder(
+            frame,
+            "Content finder",
+            "↑/↓ select · ←/→ change target · Enter jump · Esc cancel",
+            &main.finder,
+            Vec::new(),
+            None,
+            "Content finder requires open course",
+        );
     }
+}
+
+fn render_themed_finder(
+    frame: &mut Frame,
+    title: &str,
+    hint: &str,
+    state: &SearchModalState,
+    rows: Vec<FinderRow>,
+    categories: Option<Vec<FinderCategory>>,
+    empty_text: &str,
+) {
+    let outer = frame.area();
+    let area = centered_rect(
+        ((outer.width as f32) * 0.70) as u16,
+        ((outer.height as f32) * 0.60) as u16,
+        outer,
+    );
+    dim_background(frame, outer, area);
+    frame.render_widget(Clear, area);
+    fill_area(frame, area, theme::CHROME_BG);
+
+    let category_lines = categories
+        .as_deref()
+        .map(|categories| finder_category_lines(categories, area.width as usize))
+        .unwrap_or_default();
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(category_lines.len() as u16),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(area);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            pad_to_width(title, layout[0].width as usize),
+            Style::default()
+                .fg(theme::NEUTRAL_WHITE)
+                .bg(theme::CHROME_BG)
+                .add_modifier(Modifier::BOLD),
+        ))),
+        layout[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            pad_to_width(
+                &format!("> {}", state.input.value),
+                layout[1].width as usize,
+            ),
+            Style::default()
+                .fg(theme::NEUTRAL_WHITE)
+                .bg(theme::CHROME_BG),
+        ))),
+        layout[1],
+    );
+    if !category_lines.is_empty() {
+        frame.render_widget(Paragraph::new(category_lines), layout[2]);
+    }
+
+    fill_area(frame, layout[3], theme::PANEL_ACTIVE_BG);
+    frame.render_widget(
+        Paragraph::new(finder_result_lines(
+            &rows,
+            state.selected,
+            empty_text,
+            layout[3],
+        )),
+        layout[3],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            pad_to_width(hint, layout[4].width as usize),
+            Style::default()
+                .fg(theme::NEUTRAL_GRAY)
+                .bg(theme::CHROME_BG),
+        ))),
+        layout[4],
+    );
+}
+
+fn finder_result_lines(
+    rows: &[FinderRow],
+    selected: usize,
+    empty_text: &str,
+    area: Rect,
+) -> Vec<Line<'static>> {
+    let width = area.width as usize;
+    if rows.is_empty() {
+        return vec![Line::from(Span::styled(
+            pad_to_width(empty_text, width),
+            Style::default()
+                .fg(theme::NEUTRAL_GRAY)
+                .bg(theme::PANEL_ACTIVE_BG),
+        ))];
+    }
+
+    let selected = selected.min(rows.len() - 1);
+    let row_capacity = area.height as usize;
+    let visible_start = if row_capacity == 0 {
+        selected
+    } else {
+        selected.saturating_sub(row_capacity.saturating_sub(1))
+    };
+    rows.iter()
+        .skip(visible_start)
+        .take(row_capacity)
+        .enumerate()
+        .map(|(local, row)| finder_row_line(row, visible_start + local == selected, width))
+        .collect()
+}
+
+fn finder_row_line(row: &FinderRow, selected: bool, width: usize) -> Line<'static> {
+    let row_bg = if selected {
+        theme::PANEL_SELECTED
+    } else {
+        theme::PANEL_ACTIVE_BG
+    };
+    let mut spans = Vec::new();
+    spans.extend(
+        row.spans
+            .iter()
+            .cloned()
+            .map(|span| finder_row_span(span, selected, row_bg)),
+    );
+    let padding = " ".repeat(width.saturating_sub(line_width(&spans)));
+    let padding_style = if selected {
+        selected_finder_style(None)
+    } else {
+        Style::default().bg(theme::PANEL_ACTIVE_BG)
+    };
+    spans.push(Span::styled(padding, padding_style));
+    Line::from(spans)
+}
+
+fn finder_row_span(mut span: Span<'static>, selected: bool, bg: Color) -> Span<'static> {
+    if selected {
+        span.style = selected_finder_style(span.style.fg);
+    } else {
+        span.style = span.style.bg(bg);
+        if span.style.fg.is_none() {
+            span.style = span.style.fg(theme::NEUTRAL_WHITE);
+        }
+    }
+    span
+}
+
+fn selected_finder_style(existing_fg: Option<Color>) -> Style {
+    Style::default()
+        .fg(existing_fg.unwrap_or(theme::NEUTRAL_WHITE))
+        .bg(theme::PANEL_SELECTED)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn finder_category_lines(categories: &[FinderCategory], max_width: usize) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    let mut row_spans = Vec::new();
+    let mut row_width = 0usize;
+    for category in categories {
+        let chip = format!(" {} ", category.label);
+        let width = UnicodeWidthStr::width(chip.as_str()) + 1;
+        if row_width + width > max_width && !row_spans.is_empty() {
+            row_spans.push(Span::styled(
+                " ".repeat(max_width.saturating_sub(row_width)),
+                Style::default().bg(theme::CHROME_BG),
+            ));
+            out.push(Line::from(std::mem::take(&mut row_spans)));
+            row_width = 0;
+        }
+        row_spans.push(Span::styled(chip, finder_category_style(category.active)));
+        row_spans.push(Span::styled(" ", Style::default().bg(theme::CHROME_BG)));
+        row_width += width;
+    }
+    if !row_spans.is_empty() {
+        row_spans.push(Span::styled(
+            " ".repeat(max_width.saturating_sub(row_width)),
+            Style::default().bg(theme::CHROME_BG),
+        ));
+        out.push(Line::from(row_spans));
+    }
+    out
+}
+
+fn finder_category_style(active: bool) -> Style {
+    if active {
+        Style::default()
+            .fg(theme::NEUTRAL_BLACK)
+            .bg(theme::BRAND)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(theme::NEUTRAL_GRAY)
+            .bg(theme::CHROME_BG)
+    }
+}
+
+fn dim_background(frame: &mut Frame, outer: Rect, modal: Rect) {
+    let buffer = frame.buffer_mut();
+    for y in outer.y..outer.bottom() {
+        for x in outer.x..outer.right() {
+            if rect_contains(modal, x, y) {
+                continue;
+            }
+            let cell = &mut buffer[(x, y)];
+            cell.fg = dim_color(cell.fg);
+            cell.bg = dim_color(cell.bg);
+            cell.modifier.insert(Modifier::DIM);
+        }
+    }
+}
+
+fn rect_contains(rect: Rect, x: u16, y: u16) -> bool {
+    x >= rect.x && x < rect.right() && y >= rect.y && y < rect.bottom()
+}
+
+fn dim_color(color: Color) -> Color {
+    match color {
+        theme::NEUTRAL_WHITE => theme::NEUTRAL_GRAY,
+        theme::NEUTRAL_GRAY => theme::NEUTRAL_BRIGHT_BLACK,
+        theme::NEUTRAL_BRIGHT_BLACK => theme::PANEL_HEADER,
+        theme::BRAND => Color::Indexed(31),
+        theme::WARNING => Color::Indexed(178),
+        theme::ERROR => Color::Indexed(124),
+        theme::SUCCESS => Color::Indexed(35),
+        theme::PANEL_SELECTED => Color::Indexed(23),
+        theme::PANEL_ACTIVE_BG => theme::PANEL_INACTIVE_BG,
+        theme::CHROME_BG => theme::PANEL_INACTIVE_BG,
+        theme::PANEL_HEADER => theme::PANEL_INACTIVE_BG,
+        theme::SEPARATOR => theme::NEUTRAL_BRIGHT_BLACK,
+        theme::NEUTRAL_BLACK | Color::Reset => color,
+        Color::Indexed(index) if index > 16 => Color::Indexed(index.saturating_sub(2).max(16)),
+        _ => color,
+    }
+}
+
+fn fill_area(frame: &mut Frame, area: Rect, bg: Color) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let line = " ".repeat(area.width as usize);
+    let lines: Vec<Line<'static>> = (0..area.height)
+        .map(|_| Line::from(Span::styled(line.clone(), Style::default().bg(bg))))
+        .collect();
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn line_width(spans: &[Span]) -> usize {
+    spans
+        .iter()
+        .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+        .sum()
 }
 
 fn render_toast(frame: &mut Frame, message: &str) {
@@ -628,6 +884,8 @@ fn truncate_with_ellipsis(value: &str, max_width: usize) -> String {
 mod tests {
     use super::*;
     use crate::app::state::types::CoursePageData;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     #[test]
     fn active_tab_title_uses_current_view() {
@@ -643,5 +901,109 @@ mod tests {
 
         main.settings_open = true;
         assert_eq!(active_tab_title(&main), "Settings");
+    }
+
+    #[test]
+    fn finder_selected_rows_fill_visible_width() {
+        let row = FinderRow {
+            spans: vec![
+                Span::styled("MATH      ", Style::default().fg(theme::BRAND)),
+                Span::raw(" Mathematics"),
+            ],
+        };
+
+        let line = finder_row_line(&row, true, 36);
+
+        assert_eq!(line_width(&line.spans), 36);
+        assert_eq!(line.spans[0].content.as_ref(), "MATH      ");
+        assert!(
+            line.spans
+                .iter()
+                .all(|span| span.style.bg == Some(theme::PANEL_SELECTED))
+        );
+    }
+
+    #[test]
+    fn finder_category_styling_distinguishes_active_and_inactive_targets() {
+        let active = finder_category_style(true);
+        let inactive = finder_category_style(false);
+
+        assert_eq!(active.bg, Some(theme::BRAND));
+        assert_eq!(active.fg, Some(theme::NEUTRAL_BLACK));
+        assert_eq!(inactive.bg, Some(theme::CHROME_BG));
+        assert_eq!(inactive.fg, Some(theme::NEUTRAL_GRAY));
+    }
+
+    #[test]
+    fn finder_unselected_course_shortnames_keep_brand_color() {
+        let row = FinderRow {
+            spans: vec![
+                Span::styled("MATH      ", Style::default().fg(theme::BRAND)),
+                Span::raw(" Mathematics"),
+            ],
+        };
+
+        let line = finder_row_line(&row, false, 36);
+
+        assert_eq!(line.spans[0].style.fg, Some(theme::BRAND));
+        assert!(
+            line.spans
+                .iter()
+                .all(|span| span.style.bg == Some(theme::PANEL_ACTIVE_BG))
+        );
+    }
+
+    #[test]
+    fn dim_background_preserves_symbols_and_darkens_known_colors() {
+        let backend = TestBackend::new(10, 4);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        "A",
+                        Style::default()
+                            .fg(theme::NEUTRAL_WHITE)
+                            .bg(theme::PANEL_ACTIVE_BG),
+                    ))),
+                    Rect::new(0, 0, 1, 1),
+                );
+                dim_background(frame, frame.area(), Rect::new(5, 0, 2, 2));
+            })
+            .unwrap();
+
+        let cell = &terminal.backend().buffer()[(0, 0)];
+        assert_eq!(cell.symbol(), "A");
+        assert_eq!(cell.fg, theme::NEUTRAL_GRAY);
+        assert_eq!(cell.bg, theme::PANEL_INACTIVE_BG);
+        assert!(cell.modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn dim_background_does_not_dim_inside_modal_rect() {
+        let backend = TestBackend::new(10, 4);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        "B",
+                        Style::default()
+                            .fg(theme::NEUTRAL_WHITE)
+                            .bg(theme::PANEL_ACTIVE_BG),
+                    ))),
+                    Rect::new(5, 1, 1, 1),
+                );
+                dim_background(frame, frame.area(), Rect::new(5, 1, 2, 2));
+            })
+            .unwrap();
+
+        let cell = &terminal.backend().buffer()[(5, 1)];
+        assert_eq!(cell.symbol(), "B");
+        assert_eq!(cell.fg, theme::NEUTRAL_WHITE);
+        assert_eq!(cell.bg, theme::PANEL_ACTIVE_BG);
+        assert!(!cell.modifier.contains(Modifier::DIM));
     }
 }
