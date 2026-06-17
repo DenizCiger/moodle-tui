@@ -42,6 +42,12 @@ impl AppState {
                             course.loading = false;
                             match result {
                                 Ok(sections) => {
+                                    if course.sections.is_empty() {
+                                        course.collapsed =
+                                            crate::ui::course_tree::initial_collapsed_nodes(
+                                                &sections,
+                                            );
+                                    }
                                     course.sections = sections;
                                     course.error = None;
                                     course.from_cache = false;

@@ -31,7 +31,7 @@ pub fn course_section_node_id(section_id: i64) -> String {
     format!("section:{section_id}")
 }
 
-fn course_module_node_id(section_id: i64, module_id: i64) -> String {
+pub fn course_module_node_id(section_id: i64, module_id: i64) -> String {
     format!("module:{section_id}:{module_id}")
 }
 
@@ -247,6 +247,31 @@ pub fn build_course_tree_rows(
     rows
 }
 
+pub fn initial_collapsed_nodes(sections: &[CourseSection]) -> HashSet<String> {
+    let mut collapsed = HashSet::new();
+    for section in sections {
+        if section.modules.is_empty() {
+            collapsed.insert(course_section_node_id(section.id));
+            continue;
+        }
+        for module in &section.modules {
+            let has_children = module
+                .description
+                .as_deref()
+                .is_some_and(|description| !strip_html(description).trim().is_empty())
+                || module
+                    .url
+                    .as_deref()
+                    .is_some_and(|url| !url.trim().is_empty())
+                || !module.contents.is_empty();
+            if has_children {
+                collapsed.insert(course_module_node_id(section.id, module.id));
+            }
+        }
+    }
+    collapsed
+}
+
 fn content_row(
     section_id: i64,
     module_id: i64,
@@ -335,5 +360,51 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].kind, CourseTreeNodeKind::Section);
         assert!(!rows[0].expanded);
+    }
+
+    #[test]
+    fn initial_collapse_hides_module_children_and_empty_sections() {
+        let sections = vec![
+            CourseSection {
+                id: 1,
+                name: Some("General".into()),
+                section: Some(1),
+                summary: None,
+                visible: Some(1),
+                modules: vec![CourseModule {
+                    id: 10,
+                    instance: None,
+                    name: "Announcements".into(),
+                    modname: Some("forum".into()),
+                    description: None,
+                    url: Some("https://example.test/forum".into()),
+                    visible: Some(1),
+                    contents: vec![],
+                }],
+            },
+            CourseSection {
+                id: 2,
+                name: Some("Empty".into()),
+                section: Some(2),
+                summary: None,
+                visible: Some(1),
+                modules: vec![],
+            },
+        ];
+        let collapsed = initial_collapsed_nodes(&sections);
+        assert!(collapsed.contains("module:1:10"));
+        assert!(collapsed.contains("section:2"));
+
+        let rows = build_course_tree_rows(&sections, &collapsed);
+        assert!(
+            rows.iter()
+                .any(|row| row.id == "module:1:10" && !row.expanded)
+        );
+        assert!(!rows.iter().any(|row| row.id == "module-url:1:10"));
+        assert!(
+            rows.iter()
+                .any(|row| row.id == "section:2" && !row.expanded)
+        );
+        assert!(!rows.iter().any(|row| row.id == "section-empty:2"));
     }
 }

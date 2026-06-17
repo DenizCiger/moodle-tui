@@ -13,6 +13,11 @@ pub const NEUTRAL_BRIGHT_BLACK: Color = Color::Indexed(240);
 pub const PANEL_HEADER: Color = Color::Indexed(238);
 pub const PANEL_SELECTED: Color = Color::Indexed(24);
 pub const PANEL_ALTERNATE: Color = Color::Indexed(236);
+pub const PANEL_ACTIVE_BG: Color = Color::Indexed(237);
+pub const PANEL_INACTIVE_BG: Color = Color::Indexed(235);
+pub const TAB_INACTIVE_BG: Color = Color::Indexed(238);
+pub const CHROME_BG: Color = Color::Indexed(236);
+pub const SEPARATOR: Color = Color::Indexed(242);
 
 pub fn components_theme() -> tui_components::ui::theme::Theme {
     tui_components::ui::theme::Theme {

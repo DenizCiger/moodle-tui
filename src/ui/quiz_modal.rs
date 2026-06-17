@@ -231,14 +231,24 @@ fn render_control_lines(
     let selected_control = control_idx == modal.selected_control;
     match control.kind {
         QuizAnswerKind::Text => {
-            let marker = if selected_control { ">" } else { " " };
+            let label_style = if selected_control {
+                Style::default()
+                    .fg(theme::NEUTRAL_WHITE)
+                    .bg(theme::PANEL_SELECTED)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
             lines.push(Line::from(vec![
-                Span::styled(format!(" {marker}"), Style::default().fg(theme::BRAND)),
-                Span::raw(if modal.editing_text {
-                    " Answer (editing): "
-                } else {
-                    " Answer: "
-                }),
+                Span::raw(" "),
+                Span::styled(
+                    if modal.editing_text {
+                        " Answer (editing): "
+                    } else {
+                        " Answer: "
+                    },
+                    label_style,
+                ),
                 Span::styled(
                     if control.value.is_empty() {
                         "(empty)".to_owned()
@@ -254,10 +264,17 @@ fn render_control_lines(
             ]));
         }
         QuizAnswerKind::SingleChoice | QuizAnswerKind::MultiChoice => {
-            let marker = if selected_control { ">" } else { " " };
+            let answer_style = if selected_control {
+                Style::default()
+                    .fg(theme::NEUTRAL_WHITE)
+                    .bg(theme::PANEL_SELECTED)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
             lines.push(Line::from(vec![
-                Span::styled(format!(" {marker}"), Style::default().fg(theme::BRAND)),
-                Span::raw(" Answer"),
+                Span::raw(" "),
+                Span::styled(" Answer", answer_style),
             ]));
             for (option_idx, option) in control.options.iter().enumerate() {
                 let picked = selected_control && option_idx == modal.selected_option;

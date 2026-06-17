@@ -4,33 +4,67 @@ use crate::app::state::types::MainState;
 use crate::ui::{assignment_modal, course_tree, dashboard, quiz_modal, settings, theme};
 use chrono::TimeZone;
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use tui_components::ui::search::{
     SearchModal, SearchModalCategory, SearchModalRow, highlight_spans,
 };
+use unicode_width::UnicodeWidthStr;
 
 pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     let area = frame.area();
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(area);
+    if !main.settings_open && matches!(main.view, CourseView::Dashboard) {
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
+            .split(area);
 
-    render_header(frame, layout[0], main, state);
+        render_tabs(frame, layout[0], main, state);
+        render_dashboard_filter_row(frame, layout[1], main);
+        dashboard::render_dashboard(frame, layout[2], main);
+        render_footer(frame, layout[3], main);
+    } else if main.settings_open {
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
+            .split(area);
 
-    match &main.view {
-        CourseView::Dashboard => dashboard::render_dashboard(frame, layout[1], main),
-        CourseView::Course(course) => dashboard::render_course_page(frame, layout[1], course),
+        render_tabs(frame, layout[0], main, state);
+        render_settings_filter_row(frame, layout[1], main);
+        settings::render(frame, layout[2], main);
+        render_footer(frame, layout[3], main);
+    } else {
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ])
+            .split(area);
+
+        render_tabs(frame, layout[0], main, state);
+
+        if let CourseView::Course(course) = &main.view {
+            dashboard::render_course_page(frame, layout[1], course);
+        }
+
+        render_horizontal_separator(frame, layout[2]);
+        render_footer(frame, layout[3], main);
     }
-
-    render_footer(frame, layout[2], main);
 
     if let Some(modal) = &main.assignment_modal {
         assignment_modal::render(frame, modal);
@@ -43,10 +77,6 @@ pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
         render_finder(frame, main);
     }
 
-    if main.settings_open {
-        settings::render(frame, state);
-    }
-
     render_api_key_input(frame, main);
     render_model_picker(frame, main);
     render_plugin_install_input(frame, main);
@@ -56,67 +86,171 @@ pub fn render(frame: &mut Frame, main: &MainState, state: &AppState) {
     }
 }
 
-fn render_header(
-    frame: &mut Frame,
-    area: ratatui::layout::Rect,
-    main: &MainState,
-    state: &AppState,
-) {
+fn render_tabs(frame: &mut Frame, area: Rect, main: &MainState, state: &AppState) {
     let username = state
         .saved_config
         .as_ref()
         .map(|c| c.username.as_str())
         .unwrap_or("(unknown)");
-    let title = match &main.view {
-        CourseView::Dashboard => "Dashboard".to_owned(),
-        CourseView::Course(course) => {
-            if !course.course_short_name.is_empty() {
-                course.course_short_name.clone()
-            } else if !course.course_full_name.is_empty() {
-                course.course_full_name.clone()
-            } else {
-                format!("Course #{}", course.course_id)
-            }
-        }
+    let tab_title = active_tab_title(main);
+    let username = format!("[{username}]");
+    let username_width = UnicodeWidthStr::width(username.as_str());
+    let max_tab_width = if area.width as usize > username_width + 2 {
+        area.width as usize - username_width - 2
+    } else {
+        area.width as usize
     };
-    let line = Line::from(vec![
-        Span::styled(
-            " moodle-tui ",
+    let tab = format!(
+        " {} ",
+        truncate_with_ellipsis(&tab_title, max_tab_width.saturating_sub(2))
+    );
+    let tab_width = UnicodeWidthStr::width(tab.as_str());
+    let show_username = tab_width + 1 + username_width <= area.width as usize;
+    let spacer_width = if show_username {
+        area.width as usize - tab_width - username_width
+    } else {
+        area.width as usize - tab_width.min(area.width as usize)
+    };
+
+    let mut spans = vec![Span::styled(
+        tab,
+        Style::default()
+            .fg(theme::NEUTRAL_BLACK)
+            .bg(theme::BRAND)
+            .add_modifier(Modifier::BOLD),
+    )];
+    spans.push(Span::styled(
+        " ".repeat(spacer_width),
+        Style::default().bg(theme::NEUTRAL_BLACK),
+    ));
+    if show_username {
+        spans.push(Span::styled(
+            username,
             Style::default()
-                .fg(theme::NEUTRAL_BLACK)
-                .bg(theme::BRAND)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-        Span::styled(
-            title,
-            Style::default()
-                .fg(theme::NEUTRAL_WHITE)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("[{username}]"),
-            Style::default().fg(theme::NEUTRAL_GRAY),
-        ),
-    ]);
-    frame.render_widget(Paragraph::new(line), area);
+                .fg(theme::NEUTRAL_GRAY)
+                .bg(theme::NEUTRAL_BLACK),
+        ));
+    }
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn render_footer(frame: &mut Frame, area: ratatui::layout::Rect, main: &MainState) {
+fn active_tab_title(main: &MainState) -> String {
+    if main.settings_open {
+        "Settings".to_owned()
+    } else {
+        match &main.view {
+            CourseView::Dashboard => "Dashboard".to_owned(),
+            CourseView::Course(course) => {
+                if !course.course_short_name.is_empty() {
+                    course.course_short_name.clone()
+                } else if !course.course_full_name.is_empty() {
+                    course.course_full_name.clone()
+                } else {
+                    format!("Course #{}", course.course_id)
+                }
+            }
+        }
+    }
+}
+
+fn render_dashboard_filter_row(frame: &mut Frame, area: Rect, main: &MainState) {
+    let (text, style) = if main.dashboard_search_active || !main.dashboard_search_query.is_empty() {
+        (
+            format!(" / {}", main.dashboard_search_query),
+            Style::default()
+                .fg(theme::NEUTRAL_WHITE)
+                .bg(theme::CHROME_BG),
+        )
+    } else {
+        (
+            " / filter courses and upcoming tasks".to_owned(),
+            Style::default()
+                .fg(theme::NEUTRAL_GRAY)
+                .bg(theme::CHROME_BG),
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            pad_to_width(&text, area.width as usize),
+            style,
+        ))),
+        area,
+    );
+}
+
+fn render_settings_filter_row(frame: &mut Frame, area: Rect, main: &MainState) {
+    let (text, style) = if main.settings_search_active || !main.settings_search_query.is_empty() {
+        (
+            format!(" / {}", main.settings_search_query),
+            Style::default()
+                .fg(theme::NEUTRAL_WHITE)
+                .bg(theme::CHROME_BG),
+        )
+    } else {
+        (
+            " / filter keybinds and config".to_owned(),
+            Style::default()
+                .fg(theme::NEUTRAL_GRAY)
+                .bg(theme::CHROME_BG),
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            pad_to_width(&text, area.width as usize),
+            style,
+        ))),
+        area,
+    );
+}
+
+fn render_horizontal_separator(frame: &mut Frame, area: Rect) {
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "─".repeat(area.width as usize),
+            Style::default()
+                .fg(theme::SEPARATOR)
+                .bg(theme::NEUTRAL_BLACK),
+        ))),
+        area,
+    );
+}
+
+fn render_footer(frame: &mut Frame, area: Rect, main: &MainState) {
+    if main.settings_open {
+        let text = settings::footer_text(main);
+        let line = Line::from(Span::styled(
+            pad_to_width(text, area.width as usize),
+            Style::default()
+                .fg(theme::NEUTRAL_GRAY)
+                .bg(theme::CHROME_BG),
+        ));
+        frame.render_widget(Paragraph::new(line), area);
+        return;
+    }
     let mut hints = vec![
         "? help".to_owned(),
-        "/ courses".to_owned(),
+        if matches!(main.view, CourseView::Dashboard) {
+            "/ filter".to_owned()
+        } else {
+            "/ courses".to_owned()
+        },
         "r refresh".to_owned(),
     ];
+    if matches!(main.view, CourseView::Dashboard) {
+        hints.push("←/→ pan".to_owned());
+        hints.push("Ctrl+← reset pan".to_owned());
+    }
     if matches!(main.view, CourseView::Course(_)) {
         hints.push("Esc back".to_owned());
         hints.push("f content".to_owned());
     }
     hints.push("q quit".to_owned());
+    let text = format!(" {}", hints.join("  ·  "));
     let line = Line::from(Span::styled(
-        format!(" {}", hints.join("  ·  ")),
-        Style::default().fg(theme::NEUTRAL_GRAY),
+        pad_to_width(&text, area.width as usize),
+        Style::default()
+            .fg(theme::NEUTRAL_GRAY)
+            .bg(theme::CHROME_BG),
     ));
     frame.render_widget(Paragraph::new(line), area);
 }
@@ -415,7 +549,6 @@ fn render_model_picker(frame: &mut Frame, main: &MainState) {
     let mut lines = Vec::new();
     lines.push(Line::from(""));
     for (idx, option) in picker.options.iter().enumerate() {
-        let marker = if idx == picker.selected { ">" } else { " " };
         let style = if idx == picker.selected {
             Style::default()
                 .fg(theme::NEUTRAL_WHITE)
@@ -426,7 +559,7 @@ fn render_model_picker(frame: &mut Frame, main: &MainState) {
         };
         lines.push(Line::from(vec![
             Span::raw(" "),
-            Span::styled(format!("{marker} {option}"), style),
+            Span::styled(option.clone(), style),
         ]));
     }
     if let Some(error) = &picker.error {
@@ -456,4 +589,59 @@ pub fn format_timestamp(seconds: i64) -> String {
         .single()
         .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|| "(unknown)".to_owned())
+}
+
+fn pad_to_width(value: &str, width: usize) -> String {
+    let current = UnicodeWidthStr::width(value);
+    if current >= width {
+        value.to_owned()
+    } else {
+        format!("{value}{}", " ".repeat(width - current))
+    }
+}
+
+fn truncate_with_ellipsis(value: &str, max_width: usize) -> String {
+    if UnicodeWidthStr::width(value) <= max_width {
+        return value.to_owned();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+    if max_width == 1 {
+        return "…".to_owned();
+    }
+    let mut out = String::new();
+    let mut width = 0usize;
+    for ch in value.chars() {
+        let ch_width = UnicodeWidthStr::width(ch.to_string().as_str());
+        if width + ch_width + 1 > max_width {
+            break;
+        }
+        out.push(ch);
+        width += ch_width;
+    }
+    out.push('…');
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::state::types::CoursePageData;
+
+    #[test]
+    fn active_tab_title_uses_current_view() {
+        let mut main = MainState::default();
+        assert_eq!(active_tab_title(&main), "Dashboard");
+
+        main.view = CourseView::Course(CoursePageData {
+            course_short_name: "MATH".into(),
+            course_full_name: "Mathematics".into(),
+            ..Default::default()
+        });
+        assert_eq!(active_tab_title(&main), "MATH");
+
+        main.settings_open = true;
+        assert_eq!(active_tab_title(&main), "Settings");
+    }
 }

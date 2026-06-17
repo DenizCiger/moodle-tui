@@ -80,7 +80,7 @@ fn pick(ids: &[&'static str]) -> Vec<ShortcutDisplay> {
             "quit" => d(id, "q", "Quit app"),
             "logout" => d(id, "l", "Logout"),
             "dashboard-refresh" => d(id, "r", "Refresh dashboard or active course page"),
-            "dashboard-open-finder" => d(id, "/", "Open course finder"),
+            "dashboard-open-finder" => d(id, "/", "Filter dashboard or open course finder"),
             "dashboard-open-content-finder" => d(id, "f", "Open course content finder"),
             "dashboard-open-assignment-modal" => d(id, "Enter", "Open selected assignment or quiz"),
             "dashboard-copy-link" => d(id, "c", "Copy selected link to clipboard"),

@@ -131,8 +131,7 @@ impl SettingsPane {
 pub struct SettingsPaneState {
     pub cursor: usize,
     pub scroll: u16,
-    pub search_query: String,
-    pub search_active: bool,
+    pub horizontal_scroll: u16,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -145,6 +144,8 @@ pub struct MainState {
     pub settings_active_pane: SettingsPane,
     pub settings_keybinds: SettingsPaneState,
     pub settings_config: SettingsPaneState,
+    pub settings_search_query: String,
+    pub settings_search_active: bool,
     pub assignment_modal: Option<AssignmentModalData>,
     pub quiz_modal: Option<QuizModalData>,
     pub course_finder_open: bool,
@@ -157,6 +158,10 @@ pub struct MainState {
     pub toast: Option<String>,
     pub toast_id: u64,
     pub dashboard_focus: DashboardPane,
+    pub dashboard_search_query: String,
+    pub dashboard_search_active: bool,
+    pub dashboard_upcoming_horizontal_scroll: u16,
+    pub dashboard_courses_horizontal_scroll: u16,
     pub assignment_list_by_course_id: std::collections::HashMap<i64, Vec<AssignmentDetail>>,
     pub quiz_list_by_course_id: std::collections::HashMap<i64, Vec<QuizSummary>>,
     pub plugin_registry: PluginRegistry,

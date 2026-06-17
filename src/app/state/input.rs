@@ -8,7 +8,7 @@ use crate::moodle::urls::{build_assignment_activity_url, build_course_view_url};
 use crate::plugins::protocol::{QuizControlContext, QuizOptionContext, QuizQuestionContext};
 use crate::shortcuts::{core_key_conflicts, is_key_label_pressed, is_shortcut_pressed};
 use crate::ui::course_tree::{CourseTreeNodeKind, CourseTreeRow, build_course_tree_rows};
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, KeyModifiers};
 use tui_components::input::login::{
     LoginKeyBindings, LoginKeyOutcome, handle_login_key as handle_shared_login_key,
 };
@@ -126,6 +126,7 @@ fn handle_login_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
 }
 
 fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
+    let terminal_width = state.terminal_size.0;
     let main = match &mut state.screen {
         Screen::MainShell(main) => main,
         _ => return Vec::new(),
@@ -235,7 +236,7 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
     }
 
     if main.settings_open {
-        return handle_settings_key(main, key);
+        return handle_settings_key(main, key, terminal_width);
     }
 
     if main.assignment_modal.is_some() {
@@ -256,6 +257,10 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
         if let Some(commands) = handle_course_view_key(main, key) {
             return commands;
         }
+    }
+
+    if main.dashboard_search_active && matches!(main.view, CourseView::Dashboard) {
+        return handle_dashboard_search_key(main, key, terminal_width);
     }
 
     if is_shortcut_pressed("quit", key) {
@@ -286,8 +291,16 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
         }
     }
     if is_shortcut_pressed("dashboard-open-finder", key) {
-        main.course_finder_open = true;
-        main.finder.reset();
+        if matches!(main.view, CourseView::Dashboard) {
+            main.dashboard_search_query.clear();
+            main.dashboard_search_active = true;
+            main.selected_row = 0;
+            main.dashboard_upcoming_horizontal_scroll = 0;
+            main.dashboard_courses_horizontal_scroll = 0;
+        } else {
+            main.course_finder_open = true;
+            main.finder.reset();
+        }
         return Vec::new();
     }
     if is_shortcut_pressed("dashboard-open-content-finder", key)
@@ -308,12 +321,28 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
     if key.code == crossterm::event::KeyCode::Tab && matches!(main.view, CourseView::Dashboard) {
         main.dashboard_focus = main.dashboard_focus.toggle();
         main.selected_row = 0;
+        clamp_active_dashboard_horizontal_scroll(main, terminal_width);
+        return Vec::new();
+    }
+    if key.code == crossterm::event::KeyCode::Left
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+        && matches!(main.view, CourseView::Dashboard)
+    {
+        *active_dashboard_horizontal_scroll_mut(main) = 0;
+        return Vec::new();
+    }
+    if key.code == crossterm::event::KeyCode::Left && matches!(main.view, CourseView::Dashboard) {
+        move_dashboard_horizontal_scroll(main, -4, terminal_width);
+        return Vec::new();
+    }
+    if key.code == crossterm::event::KeyCode::Right && matches!(main.view, CourseView::Dashboard) {
+        move_dashboard_horizontal_scroll(main, 4, terminal_width);
         return Vec::new();
     }
     if is_shortcut_pressed("dashboard-open-assignment-modal", key)
         && main.dashboard_focus == DashboardPane::Upcoming
     {
-        if let Some(assignment) = main.dashboard.upcoming.get(main.selected_row).cloned() {
+        if let Some(assignment) = selected_dashboard_upcoming(main).cloned() {
             return open_modal_for_upcoming(main, assignment);
         }
         return Vec::new();
@@ -335,7 +364,7 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
     if key.code == crossterm::event::KeyCode::Enter
         && main.dashboard_focus == DashboardPane::Courses
     {
-        if let Some(course) = main.dashboard.courses.get(main.selected_row).cloned() {
+        if let Some(course) = selected_dashboard_course(main).cloned() {
             let course_id = course.id;
             main.view = CourseView::Course(crate::app::state::types::CoursePageData {
                 course_id,
@@ -355,11 +384,7 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
         return Vec::new();
     }
     if is_shortcut_pressed("dashboard-down", key) {
-        let max = match main.dashboard_focus {
-            DashboardPane::Upcoming => main.dashboard.upcoming.len(),
-            DashboardPane::Courses => main.dashboard.courses.len(),
-        }
-        .saturating_sub(1);
+        let max = dashboard_active_len(main).saturating_sub(1);
         if main.selected_row < max {
             main.selected_row += 1;
         }
@@ -370,11 +395,7 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
         return Vec::new();
     }
     if is_shortcut_pressed("dashboard-end", key) {
-        main.selected_row = match main.dashboard_focus {
-            DashboardPane::Upcoming => main.dashboard.upcoming.len(),
-            DashboardPane::Courses => main.dashboard.courses.len(),
-        }
-        .saturating_sub(1);
+        main.selected_row = dashboard_active_len(main).saturating_sub(1);
         return Vec::new();
     }
 
@@ -382,7 +403,7 @@ fn handle_main_key(state: &mut AppState, key: KeyEvent) -> Vec<AppCommand> {
 }
 
 fn resolve_course_link_action(main: &MainState, action: LinkAction) -> Vec<AppCommand> {
-    let course = match main.dashboard.courses.get(main.selected_row) {
+    let course = match selected_dashboard_course(main) {
         Some(c) => c,
         None => {
             return vec![AppCommand::ShowToast(
@@ -409,7 +430,7 @@ fn resolve_course_link_action(main: &MainState, action: LinkAction) -> Vec<AppCo
 }
 
 fn resolve_upcoming_link_action(main: &mut MainState, action: LinkAction) -> Vec<AppCommand> {
-    let assignment = match main.dashboard.upcoming.get(main.selected_row).cloned() {
+    let assignment = match selected_dashboard_upcoming(main).cloned() {
         Some(a) => a,
         None => {
             return vec![AppCommand::ShowToast(
@@ -480,6 +501,90 @@ fn open_modal_for_upcoming(
         ];
     }
     Vec::new()
+}
+
+fn handle_dashboard_search_key(
+    main: &mut MainState,
+    key: KeyEvent,
+    terminal_width: u16,
+) -> Vec<AppCommand> {
+    match key.code {
+        crossterm::event::KeyCode::Enter => {
+            main.dashboard_search_active = false;
+            clamp_active_dashboard_horizontal_scroll(main, terminal_width);
+        }
+        crossterm::event::KeyCode::Esc => {
+            main.dashboard_search_active = false;
+            main.dashboard_search_query.clear();
+            main.selected_row = 0;
+            main.dashboard_upcoming_horizontal_scroll = 0;
+            main.dashboard_courses_horizontal_scroll = 0;
+        }
+        crossterm::event::KeyCode::Backspace => {
+            main.dashboard_search_query.pop();
+            clamp_dashboard_cursor(main);
+            clamp_active_dashboard_horizontal_scroll(main, terminal_width);
+        }
+        crossterm::event::KeyCode::Char(ch) => {
+            if !ch.is_control() {
+                main.dashboard_search_query.push(ch);
+                clamp_dashboard_cursor(main);
+                clamp_active_dashboard_horizontal_scroll(main, terminal_width);
+            }
+        }
+        _ => {}
+    }
+    Vec::new()
+}
+
+fn dashboard_active_len(main: &MainState) -> usize {
+    match main.dashboard_focus {
+        DashboardPane::Upcoming => crate::ui::dashboard::filtered_upcoming(main).len(),
+        DashboardPane::Courses => crate::ui::dashboard::filtered_courses(main).len(),
+    }
+}
+
+fn clamp_dashboard_cursor(main: &mut MainState) {
+    main.selected_row = main
+        .selected_row
+        .min(dashboard_active_len(main).saturating_sub(1));
+}
+
+fn selected_dashboard_course(main: &MainState) -> Option<&crate::models::Course> {
+    crate::ui::dashboard::filtered_courses(main)
+        .get(main.selected_row)
+        .copied()
+}
+
+fn selected_dashboard_upcoming(main: &MainState) -> Option<&crate::models::UpcomingAssignment> {
+    crate::ui::dashboard::filtered_upcoming(main)
+        .get(main.selected_row)
+        .copied()
+}
+
+fn active_dashboard_horizontal_scroll_mut(main: &mut MainState) -> &mut u16 {
+    match main.dashboard_focus {
+        DashboardPane::Upcoming => &mut main.dashboard_upcoming_horizontal_scroll,
+        DashboardPane::Courses => &mut main.dashboard_courses_horizontal_scroll,
+    }
+}
+
+fn move_dashboard_horizontal_scroll(main: &mut MainState, delta: isize, terminal_width: u16) {
+    let max = active_dashboard_max_horizontal_scroll(main, terminal_width);
+    let scroll = active_dashboard_horizontal_scroll_mut(main);
+    *scroll = crate::ui::dashboard::bounded_horizontal_scroll(*scroll, delta, max);
+}
+
+fn clamp_active_dashboard_horizontal_scroll(main: &mut MainState, terminal_width: u16) {
+    let max = active_dashboard_max_horizontal_scroll(main, terminal_width);
+    let scroll = active_dashboard_horizontal_scroll_mut(main);
+    *scroll = (*scroll).min(max);
+}
+
+fn active_dashboard_max_horizontal_scroll(main: &MainState, terminal_width: u16) -> u16 {
+    let pane = main.dashboard_focus;
+    let pane_width = crate::ui::dashboard::dashboard_pane_width(terminal_width, pane);
+    crate::ui::dashboard::max_horizontal_scroll(main, pane, pane_width)
 }
 
 fn handle_course_view_key(main: &mut MainState, key: KeyEvent) -> Option<Vec<AppCommand>> {
@@ -706,26 +811,37 @@ fn open_modal_for_course_module(
     Vec::new()
 }
 
-fn handle_settings_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand> {
-    if active_settings_state(main).search_active {
+fn handle_settings_key(
+    main: &mut MainState,
+    key: KeyEvent,
+    terminal_width: u16,
+) -> Vec<AppCommand> {
+    if main.settings_search_active {
         return handle_settings_search_key(main, key);
     }
 
     match key.code {
         crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('?') => {
             main.settings_open = false;
-            main.settings_keybinds.search_active = false;
-            main.settings_config.search_active = false;
+            main.settings_search_active = false;
         }
         crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::BackTab => {
             main.settings_active_pane = main.settings_active_pane.toggle();
+            clamp_active_settings_horizontal_scroll(main, terminal_width);
+        }
+        crossterm::event::KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            active_settings_state(main).horizontal_scroll = 0;
+        }
+        crossterm::event::KeyCode::Left => {
+            move_settings_horizontal_scroll(main, -4, terminal_width)
+        }
+        crossterm::event::KeyCode::Right => {
+            move_settings_horizontal_scroll(main, 4, terminal_width)
         }
         crossterm::event::KeyCode::Char('/') => {
-            let state = active_settings_state(main);
-            state.search_query.clear();
-            state.search_active = true;
-            state.cursor = 0;
-            state.scroll = 0;
+            main.settings_search_query.clear();
+            main.settings_search_active = true;
+            reset_settings_cursors(main);
         }
         crossterm::event::KeyCode::Up => move_settings_cursor(main, -1),
         crossterm::event::KeyCode::Down => move_settings_cursor(main, 1),
@@ -755,23 +871,21 @@ fn handle_settings_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand> {
 fn handle_settings_search_key(main: &mut MainState, key: KeyEvent) -> Vec<AppCommand> {
     match key.code {
         crossterm::event::KeyCode::Enter => {
-            active_settings_state(main).search_active = false;
+            main.settings_search_active = false;
         }
         crossterm::event::KeyCode::Esc => {
-            let state = active_settings_state(main);
-            state.search_active = false;
-            state.search_query.clear();
-            state.cursor = 0;
-            state.scroll = 0;
+            main.settings_search_active = false;
+            main.settings_search_query.clear();
+            reset_settings_cursors(main);
         }
         crossterm::event::KeyCode::Backspace => {
-            active_settings_state(main).search_query.pop();
-            clamp_active_settings_cursor(main);
+            main.settings_search_query.pop();
+            clamp_all_settings_cursors(main);
         }
         crossterm::event::KeyCode::Char(ch) => {
             if !ch.is_control() {
-                active_settings_state(main).search_query.push(ch);
-                clamp_active_settings_cursor(main);
+                main.settings_search_query.push(ch);
+                clamp_all_settings_cursors(main);
             }
         }
         _ => {}
@@ -793,11 +907,44 @@ fn active_settings_len(main: &MainState) -> usize {
     }
 }
 
-fn clamp_active_settings_cursor(main: &mut MainState) {
-    let len = active_settings_len(main);
-    let state = active_settings_state(main);
-    state.cursor = state.cursor.min(len.saturating_sub(1));
-    state.scroll = state.scroll.min(state.cursor as u16);
+fn settings_len(main: &MainState, pane: SettingsPane) -> usize {
+    match pane {
+        SettingsPane::Keybinds => crate::ui::settings::filtered_keybind_rows(main).len(),
+        SettingsPane::Config => crate::ui::settings::filtered_config_rows(main).len(),
+    }
+}
+
+fn clamp_all_settings_cursors(main: &mut MainState) {
+    let keybind_len = settings_len(main, SettingsPane::Keybinds);
+    main.settings_keybinds.cursor = main
+        .settings_keybinds
+        .cursor
+        .min(keybind_len.saturating_sub(1));
+    main.settings_keybinds.scroll = main
+        .settings_keybinds
+        .scroll
+        .min(main.settings_keybinds.cursor as u16);
+    main.settings_keybinds.horizontal_scroll = 0;
+
+    let config_len = settings_len(main, SettingsPane::Config);
+    main.settings_config.cursor = main
+        .settings_config
+        .cursor
+        .min(config_len.saturating_sub(1));
+    main.settings_config.scroll = main
+        .settings_config
+        .scroll
+        .min(main.settings_config.cursor as u16);
+    main.settings_config.horizontal_scroll = 0;
+}
+
+fn reset_settings_cursors(main: &mut MainState) {
+    main.settings_keybinds.cursor = 0;
+    main.settings_keybinds.scroll = 0;
+    main.settings_keybinds.horizontal_scroll = 0;
+    main.settings_config.cursor = 0;
+    main.settings_config.scroll = 0;
+    main.settings_config.horizontal_scroll = 0;
 }
 
 fn move_settings_cursor(main: &mut MainState, delta: isize) {
@@ -815,6 +962,25 @@ fn move_settings_cursor(main: &mut MainState, delta: isize) {
         state.cursor = (state.cursor + delta as usize).min(len - 1);
     }
     state.scroll = state.cursor as u16;
+}
+
+fn move_settings_horizontal_scroll(main: &mut MainState, delta: isize, terminal_width: u16) {
+    let max = active_settings_max_horizontal_scroll(main, terminal_width);
+    let state = active_settings_state(main);
+    state.horizontal_scroll =
+        crate::ui::settings::bounded_horizontal_scroll(state.horizontal_scroll, delta, max);
+}
+
+fn clamp_active_settings_horizontal_scroll(main: &mut MainState, terminal_width: u16) {
+    let max = active_settings_max_horizontal_scroll(main, terminal_width);
+    let state = active_settings_state(main);
+    state.horizontal_scroll = state.horizontal_scroll.min(max);
+}
+
+fn active_settings_max_horizontal_scroll(main: &MainState, terminal_width: u16) -> u16 {
+    let pane = main.settings_active_pane;
+    let pane_width = crate::ui::settings::settings_pane_width(terminal_width, pane);
+    crate::ui::settings::max_horizontal_scroll(main, pane, pane_width)
 }
 
 fn open_selected_config_field(main: &mut MainState) -> Vec<AppCommand> {
