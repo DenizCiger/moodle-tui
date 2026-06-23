@@ -100,7 +100,11 @@ fn validate_action_id(id: &str) -> Result<(), String> {
 
 fn validate_relative_entry(entry: &str) -> Result<(), String> {
     let path = Path::new(entry);
-    if entry.trim().is_empty() || path.is_absolute() {
+    if entry.trim().is_empty()
+        || path.is_absolute()
+        || entry.contains(['\\', ':', '\0'])
+        || entry.starts_with("//")
+    {
         return Err("plugin entry must be a relative path".into());
     }
     let safe = path
@@ -152,6 +156,8 @@ mod tests {
         };
         assert!(manifest.validate().is_err());
         manifest.entry = "C:/plugin.js".into();
+        assert!(manifest.validate().is_err());
+        manifest.entry = r"..\plugin.js".into();
         assert!(manifest.validate().is_err());
     }
 }

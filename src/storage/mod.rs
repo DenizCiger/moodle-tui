@@ -3,6 +3,7 @@ pub mod config;
 pub mod plugin_settings;
 pub mod secret;
 pub mod session;
+pub mod tls;
 
 use std::path::PathBuf;
 

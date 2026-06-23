@@ -94,6 +94,25 @@ If Moodle returns `invaliddatarootpermissions`, run:
 docker compose -f docker-compose.local.yml exec --user root moodle sh -lc "chmod -R 0777 /bitnami/moodledata /bitnami/moodle"
 ```
 
+## Host-specific TLS certificates
+
+Normal public certificate roots are used by default. If a Moodle server sends an
+incomplete certificate chain or uses a private CA, place an explicitly trusted
+PEM certificate or certificate bundle at:
+
+```text
+<config-dir>/trusted-certificates/<moodle-hostname>.pem
+```
+
+For example, `https://moodle.example.edu/` uses
+`trusted-certificates/moodle.example.edu.pem`. The certificate is loaded only
+when constructing a client for that Moodle origin. When custom trust is active,
+redirects to other origins are rejected. A non-default port is included in the filename; for example,
+`https://moodle.example.edu:8443/` uses
+`trusted-certificates/moodle.example.edu-port-8443.pem`.
+`TUI_MOODLE_CONFIG_DIR` can override the platform config directory. Fixing the
+server certificate chain remains preferable to installing a custom trust root.
+
 ## Status
 
 This is the Rust port. UI fidelity is in progress — the spine (login, dashboard list,

@@ -192,7 +192,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::ValidateLogin(config) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 let result = client
                     .test_credentials(&config)
                     .await
@@ -203,7 +203,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::LoadDashboard(config) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 let courses = client.fetch_courses(&config).await;
                 let upcoming = client.fetch_upcoming_assignments(&config).await;
                 let result = match (courses, upcoming) {
@@ -225,7 +225,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
                     }));
                     return;
                 }
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 let result = client
                     .fetch_course_contents(&config, course_id)
                     .await
@@ -241,7 +241,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::LoadAssignmentDetail(config, course_id, assignment_id) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 match client.fetch_course_assignments(&config, course_id).await {
                     Ok(list) => {
                         let detail = list.iter().find(|a| a.id == assignment_id).cloned();
@@ -267,7 +267,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::LoadAssignmentStatus(config, assignment_id) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 let result = client
                     .fetch_assignment_submission_status(&config, assignment_id)
                     .await
@@ -280,7 +280,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::LoadQuizDetail(config, course_id, quiz_id) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 match client.fetch_course_quizzes(&config, course_id).await {
                     Ok(list) => {
                         let detail = list.iter().find(|q| q.id == quiz_id).cloned();
@@ -306,7 +306,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::StartQuizAttempt(config, quiz_id) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 let result = client
                     .start_quiz_attempt(&config, quiz_id)
                     .await
@@ -319,7 +319,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::LoadQuizAttempt(config, attempt_id) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 let result = client
                     .fetch_quiz_attempt_data(&config, attempt_id)
                     .await
@@ -332,7 +332,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::SaveQuizAttempt(config, attempt) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 let attempt_id = attempt.attempt.id;
                 let result = client
                     .save_quiz_attempt(&config, &attempt)
@@ -346,7 +346,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         }
         AppCommand::FinishQuizAttempt(config, attempt) => {
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 let attempt_id = attempt.attempt.id;
                 let result = client
                     .finish_quiz_attempt(&config, &attempt)
@@ -501,7 +501,7 @@ fn execute_command(tx: mpsc::UnboundedSender<RuntimeEvent>, command: AppCommand,
         } => {
             let base_url = config.base_url.clone();
             tokio::spawn(async move {
-                let client = MoodleClient::new();
+                let client = MoodleClient::for_base_url(&config.base_url);
                 match client.fetch_course_assignments(&config, course_id).await {
                     Ok(list) => {
                         let cmid = list.iter().find(|a| a.id == upcoming_id).map(|a| a.cmid);
